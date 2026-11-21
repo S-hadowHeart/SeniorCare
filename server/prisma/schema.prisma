@@ -1,0 +1,504 @@
+// SeniorCare API — Prisma schema
+// Datasource: PostgreSQL 15+ with driver adapter (@prisma/adapter-pg).
+//
+// Design notes
+// ------------
+// * Every foreign key is indexed: the dashboard and notification queries are
+//   dominated by `WHERE elder_id = ?` scans.
+// * Free-text clinical notes (CheckIn.note, Vital.note, Elder.medicalNotes,
+//   Medication.instructions) are stored AES-256-GCM encrypted by the
+//   application layer (see src/lib/crypto.ts) and therefore live in `text`
+//   columns rather than searchable varchar columns.
+// * Enums are used instead of free strings so that the database itself
+//   guarantees referential integrity of state machines (SOS lifecycle, dose
+//   status, check-in status).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Identity & access
+// ---------------------------------------------------------------------------
+
+enum Role {
+  SENIOR
+  CAREGIVER
+  ADMIN
+}
+
+enum LinkStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+enum ContactRelation {
+  FAMILY
+  CAREGIVER
+  DOCTOR
+  NEIGHBOUR
+  OTHER
+}
+
+model User {
+  id           String  @id @default(uuid()) @db.Uuid
+  email        String  @unique
+  passwordHash String
+  name         String
+  phone        String?
+  role         Role    @default(SENIOR)
+  avatarUrl    String?
+  timeZone     String  @default("UTC")
+
+  isActive        Boolean   @default(true)
+  failedLogins    Int       @default(0)
+  lockedUntil     DateTime?
+  lastLoginAt     DateTime?
+  passwordChangedAt DateTime @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // A senior "owns" exactly one elder profile (their own health record).
+  elderProfile Elder? @relation("SeniorProfile")
+
+  // Care links where this user is the caregiver.
+  careLinksAsCaregiver CareLink[] @relation("CaregiverLinks")
+
+  notifications   Notification[]
+  refreshTokens   RefreshToken[]
+  auditLogs       AuditLog[]     @relation("AuditActor")
+  revokedSessions RefreshToken[] @relation("RevokedBy")
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Health profile of the senior person. Owned by exactly one senior User.
+model Elder {
+  id           String  @id @default(uuid()) @db.Uuid
+  userId       String  @unique @db.Uuid
+  user         User    @relation("SeniorProfile", fields: [userId], references: [id], onDelete: Cascade)
+
+  displayName  String
+  dateOfBirth  DateTime? @db.Date
+  bloodType    String?
+  conditions   String[] @default([])
+  allergies    String[] @default([])
+  /// AES-256-GCM encrypted free text.
+  medicalNotes String?
+  photoUrl     String?
+
+  /// Local hour (0-23) after which the senior is considered "missed" if no
+  /// daily check-in has been recorded.
+  checkInDeadlineHour Int @default(21)
+  /// Whether the senior may trigger an SOS from their own account.
+  canTriggerSos Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  careLinks      CareLink[]
+  contacts       EmergencyContact[]
+  checkIns       CheckIn[]
+  vitals         Vital[]
+  medications    Medication[]
+  sosAlerts      SosAlert[]
+  locationPings  LocationPing[]
+
+  @@index([userId])
+  @@map("elders")
+}
+
+/// Authorisation link between a senior and a caregiver / family member.
+/// Scopes are explicit so a doctor can be given read-only vitals access.
+model CareLink {
+  id           String     @id @default(uuid()) @db.Uuid
+  elderId      String     @db.Uuid
+  elder        Elder      @relation(fields: [elderId], references: [id], onDelete: Cascade)
+  /// Null while the invitation is pending — the invited person may not have an
+  /// account yet. `invitedEmail` holds the address the invitation went to.
+  caregiverId  String?    @db.Uuid
+  caregiver    User?      @relation("CaregiverLinks", fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  relation     ContactRelation @default(FAMILY)
+  status       LinkStatus       @default(ACTIVE)
+  isPrimary    Boolean          @default(false)
+  invitedEmail String?
+
+  canViewVitals      Boolean @default(true)
+  canManageMedicines Boolean @default(false)
+  canManageContacts  Boolean @default(false)
+  canAcknowledgeSos  Boolean @default(true)
+
+  invitedAt   DateTime  @default(now())
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([elderId, caregiverId])
+  @@index([caregiverId, status])
+  @@index([elderId, status])
+  @@map("care_links")
+}
+
+/// Family members / caregivers / doctors that receive SOS alerts.
+model EmergencyContact {
+  id       String  @id @default(uuid()) @db.Uuid
+  elderId  String  @db.Uuid
+  elder    Elder   @relation(fields: [elderId], references: [id], onDelete: Cascade)
+
+  name       String
+  phone      String
+  email      String?
+  relation   ContactRelation @default(FAMILY)
+  /// Lower number = notified first.
+  priority   Int     @default(10)
+  isDoctor   Boolean @default(false)
+  /// When true this contact also receives medication reminders.
+  receivesMedicationReminders Boolean @default(false)
+  /// When true this contact is notified for missed daily check-ins.
+  receivesMissedCheckInAlerts  Boolean @default(true)
+  notes      String?
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([elderId, isActive])
+  @@map("emergency_contacts")
+}
+
+// ---------------------------------------------------------------------------
+// Daily check-in
+// ---------------------------------------------------------------------------
+
+enum CheckInStatus {
+  /// "I'm safe" confirmed by the senior.
+  SAFE
+  /// "I need help" — non-urgent, but must be reviewed by a caregiver.
+  NEEDS_HELP
+  /// No check-in was recorded before the deadline (set by the watchdog job).
+  MISSED
+}
+
+model CheckIn {
+  id       String        @id @default(uuid()) @db.Uuid
+  elderId  String        @db.Uuid
+  elder    Elder         @relation(fields: [elderId], references: [id], onDelete: Cascade)
+
+  status     CheckInStatus
+  /// 1 (worst) .. 5 (best). Optional self-reported wellbeing.
+  mood       Int?
+  /// AES-256-GCM encrypted free text.
+  note       String?
+  /// Set when the status was auto-escalated by the watchdog job.
+  autoEscalated Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([elderId, createdAt(sort: Desc)])
+  @@index([elderId, status, createdAt(sort: Desc)])
+  @@map("check_ins")
+}
+
+// ---------------------------------------------------------------------------
+// Health readings
+// ---------------------------------------------------------------------------
+
+enum VitalType {
+  BLOOD_PRESSURE
+  BLOOD_SUGAR
+  HEART_RATE
+  TEMPERATURE
+  OXYGEN_SATURATION
+  WEIGHT
+}
+
+model Vital {
+  id      String    @id @default(uuid()) @db.Uuid
+  elderId String    @db.Uuid
+  elder   Elder     @relation(fields: [elderId], references: [id], onDelete: Cascade)
+
+  type      VitalType
+  /// Primary value. For BLOOD_PRESSURE this is systolic, for BLOOD_SUGAR it is
+  /// the glucose concentration, etc.
+  value     Float
+  /// Secondary value: diastolic pressure for BLOOD_PRESSURE.
+  value2    Float?
+  unit      String
+  /// Server-side flag: the reading crossed a clinically relevant threshold.
+  isCritical Boolean  @default(false)
+  warning   String?
+  /// AES-256-GCM encrypted free text.
+  note      String?
+
+  measuredAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([elderId, type, measuredAt(sort: Desc)])
+  @@index([elderId, measuredAt(sort: Desc)])
+  @@map("vitals")
+}
+
+// ---------------------------------------------------------------------------
+// Medication
+// ---------------------------------------------------------------------------
+
+enum ScheduleType {
+  /// Fixed times every day, e.g. ["08:00", "20:00"].
+  DAILY
+  /// Fixed times on selected weekdays, e.g. Monday/Wednesday/Friday 09:00.
+  WEEKLY
+  /// Every N minutes from a start time.
+  INTERVAL
+  /// Taken on demand — never produces scheduled reminders.
+  AS_NEEDED
+}
+
+enum DoseStatus {
+  PENDING
+  TAKEN
+  SKIPPED
+  MISSED
+}
+
+model Medication {
+  id      String @id @default(uuid()) @db.Uuid
+  elderId String @db.Uuid
+  elder   Elder  @relation(fields: [elderId], references: [id], onDelete: Cascade)
+
+  name         String
+  dosage       String
+  /// AES-256-GCM encrypted free text.
+  instructions String?
+  /// IUPAC-ish code, used to warn about duplicate therapy.
+  activeIngredient String?
+
+  scheduleType ScheduleType @default(DAILY)
+  /// Local times of day in "HH:mm" (24h) format. Used by DAILY & WEEKLY.
+  times        String[]     @default([])
+  /// 0 = Sunday .. 6 = Saturday (ISO-8601). Used by WEEKLY.
+  daysOfWeek   Int[]        @default([])
+  /// Minutes between doses. Used by INTERVAL.
+  intervalMinutes Int?
+
+  startDate DateTime  @default(now()) @db.Date
+  endDate   DateTime? @db.Date
+  active    Boolean   @default(true)
+  /// Whether the caregiver (not only the senior) gets reminders.
+  notifyCaregivers Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  logs MedicationLog[]
+
+  @@index([elderId, active])
+  @@map("medications")
+}
+
+/// One row per (medication, scheduled instant). Created lazily by the
+/// scheduler / when the client asks for a schedule window.
+model MedicationLog {
+  id           String     @id @default(uuid()) @db.Uuid
+  medicationId String     @db.Uuid
+  medication   Medication @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+
+  scheduledFor DateTime
+  status       DoseStatus @default(PENDING)
+  takenAt      DateTime?
+  note         String?
+  remindedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([medicationId, scheduledFor])
+  @@index([status, scheduledFor])
+  @@map("medication_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Emergency / SOS
+// ---------------------------------------------------------------------------
+
+enum SosStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+  CANCELLED
+}
+
+enum LocationSource {
+  GPS
+  MANUAL
+}
+
+model SosAlert {
+  id       String @id @default(uuid()) @db.Uuid
+  elderId  String @db.Uuid
+  elder    Elder  @relation(fields: [elderId], references: [id], onDelete: Cascade)
+  triggeredByUserId String @db.Uuid
+
+  status   SosStatus @default(ACTIVE)
+  message  String?
+  /// Set when the senior cancelled a false alarm.
+  cancelledAt DateTime?
+  acknowledgedAt DateTime?
+  acknowledgedById String? @db.Uuid
+  resolvedAt DateTime?
+  resolvedById String? @db.Uuid
+  resolutionNote String?
+
+  /// Snapshot of the location at the time of the alert.
+  latitude  Float?
+  longitude Float?
+  accuracy  Float?
+  locationSource LocationSource?
+  locationLabel   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+
+  @@index([elderId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("sos_alerts")
+}
+
+/// Historical breadcrumb of shared locations (only captured with consent).
+model LocationPing {
+  id      String @id @default(uuid()) @db.Uuid
+  elderId String @db.Uuid
+  elder   Elder  @relation(fields: [elderId], references: [id], onDelete: Cascade)
+
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+  source    LocationSource @default(GPS)
+  label     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([elderId, createdAt(sort: Desc)])
+  @@map("location_pings")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  SOS_TRIGGERED
+  SOS_ACKNOWLEDGED
+  SOS_RESOLVED
+  CHECK_IN_MISSED
+  CHECK_IN_NEEDS_HELP
+  VITALS_CRITICAL
+  MEDICATION_DUE
+  MEDICATION_MISSED
+  CARE_LINK_INVITED
+  SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Notification {
+  id      String @id @default(uuid()) @db.Uuid
+  userId  String @db.Uuid
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  elderId String? @db.Uuid
+  sosAlertId String? @db.Uuid
+  sosAlert   SosAlert? @relation(fields: [sosAlertId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  channel NotificationChannel @default(IN_APP)
+  status  NotificationStatus  @default(PENDING)
+  title   String
+  body    String
+  /// Optional structured payload (e.g. deep-link target).
+  metadata Json?
+  /// SMTP error message when channel = EMAIL and status = FAILED.
+  failureReason String?
+
+  sentAt  DateTime?
+  readAt  DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([sosAlertId])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Sessions & audit
+// ---------------------------------------------------------------------------
+
+/// Refresh tokens are stored as SHA-256 hashes; the raw value only ever
+/// lives in the httpOnly cookie. `familyId` groups a rotation chain so that
+/// reuse of an already-rotated token can revoke the whole chain.
+model RefreshToken {
+  id      String @id @default(uuid()) @db.Uuid
+  userId  String @db.Uuid
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String   @unique
+  familyId  String   @db.Uuid
+  expiresAt DateTime
+  revokedAt DateTime?
+  /// Set when the token was revoked because a sibling token was replayed.
+  revokedReason String?
+  revokedById    String? @db.Uuid
+  revokedBy      User?   @relation("RevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  userAgent String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+/// Append-only audit trail for security-relevant actions.
+model AuditLog {
+  id       String  @id @default(uuid()) @db.Uuid
+  actorId  String? @db.Uuid
+  actor    User?   @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  action   String
+  entity   String
+  entityId String?
+  ipAddress String?
+  userAgent String?
+  metadata Json?
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([entity, entityId])
+  @@index([action, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
