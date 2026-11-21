@@ -269,6 +269,7 @@ Useful scripts: `npm run typecheck`, `npm run build`, `npm run prisma:studio`, `
 │   │   ├── migrations/        # versioned SQL
 │   │   └── seed.ts            # demo data
 │   ├── scripts/smoke.ts       # end-to-end smoke suite
+│   ├── tests/                 # Vitest integration suites
 │   └── src/
 │       ├── config/env.ts      # validated configuration
 │       ├── middleware/        # security, CORS, rate limit, validation, errors
@@ -292,14 +293,46 @@ Useful scripts: `npm run typecheck`, `npm run build`, `npm run prisma:studio`, `
 
 ## Testing
 
-The repository includes an end-to-end smoke suite that exercises the full platform against a running API:
+### Integration suites (Vitest)
+
+The API has an integration suite that runs against a real PostgreSQL database through the same Express app and Prisma client as production — no mocks of the security layers.
 
 ```bash
-# With the API running and seeded:
+# Point the suite at an isolated database or schema (it truncates every table):
+export TEST_DATABASE_URL="postgresql://user:pass@host:5432/seniorcare_test?schema=seniorcare_test"
+
+npm run test --workspace server
+```
+
+On the first run, apply the migrations to that database (create the schema first if you are using one):
+
+```bash
+cd server
+DATABASE_URL="$TEST_DATABASE_URL" DIRECT_DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy
+cd ..
+```
+
+`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The current auth suite (20 tests) covers:
+
+- account creation for seniors and caregivers, including the elder profile;
+- refresh-cookie hardening (`HttpOnly`, `SameSite=Strict`, path scope) and the guarantee that the token never appears in a JSON body;
+- case-insensitive login and duplicate-address rejection;
+- identical error responses for unknown accounts and wrong passwords;
+- account lockout after the configured number of failures, including lockout of the correct password;
+- refresh-token rotation and **family-wide revocation on replay**;
+- forged and malformed bearer tokens;
+- logout revocation and password-change session invalidation;
+- audit-log writes and request-id correlation on errors.
+
+### End-to-end smoke suite
+
+A second suite exercises the whole platform over HTTP against a running, seeded API:
+
+```bash
 node --import tsx server/scripts/smoke.ts http://127.0.0.1:4000/api/v1
 ```
 
-It covers registration and login for all roles, check-ins, vitals, medication scheduling and adherence, emergency contacts, the SOS lifecycle (trigger, acknowledge, resolve, cancel), care-link invitations and the realtime event stream. Unit and integration suites, plus CI, are the next milestone in the roadmap.
+It covers registration and login for all roles, check-ins, vitals, medication scheduling and adherence, emergency contacts, the SOS lifecycle (trigger, acknowledge, resolve, cancel), care-link invitations and the realtime event stream. CI and the remaining suites are tracked in the roadmap.
 
 ---
 
