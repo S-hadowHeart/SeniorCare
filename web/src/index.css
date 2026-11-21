@@ -1,0 +1,253 @@
+@import "tailwindcss";
+
+/* Dark mode is class based: `document.documentElement.classList` carries
+   `dark` and every `dark:` utility keys off it. The initial class is set by a
+   tiny inline script in index.html so the first paint is already correct. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens
+   ---------------------------------------------------------------------------
+   Tailwind CSS v4 is configured in CSS: the `@theme` block below generates the
+   utility classes (`bg-brand-600`, `text-ink-700`, …) and exposes the tokens
+   as CSS custom properties.
+
+   The palette is deliberately calm and high-contrast: the primary audience
+   are older adults, often on a phone, sometimes in poor light.
+
+   Cards and inputs use `surface` rather than `white` so that the whole app can
+   switch to a dark palette by re-pointing a handful of variables.
+--------------------------------------------------------------------------- */
+@theme {
+  /* Brand — teal reads as "calm / medical" and stays legible on white. */
+  --color-brand-50: #f0fdfa;
+  --color-brand-100: #ccfbf1;
+  --color-brand-200: #99f6e4;
+  --color-brand-300: #5eead4;
+  --color-brand-400: #2dd4bf;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  --color-brand-900: #134e4a;
+  --color-brand-950: #042f2e;
+
+  /* Ink — a slightly cooler grey than Tailwind's default slate. */
+  --color-ink-50: #f8fafc;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-300: #cbd5e1;
+  --color-ink-400: #94a3b8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
+
+  /* Semantic */
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+
+  --color-info-50: #f0f9ff;
+  --color-info-100: #e0f2fe;
+  --color-info-500: #0ea5e9;
+  --color-info-600: #0284c7;
+  --color-info-700: #0369a1;
+
+  /* Surfaces — the parts of the UI that are "paper" rather than text. */
+  --color-surface: #ffffff;
+  --color-inverse: #0f172a;
+  --color-inverse-foreground: #ffffff;
+
+  /* Chart ink — kept separate so the graph grid can dim in dark mode. */
+  --color-chart-grid: #e2e8f0;
+  --color-chart-axis: #cbd5e1;
+  --color-chart-label: #64748b;
+  --color-chart-legend: #475569;
+  --color-chart-line: #0f766e;
+  --color-chart-danger: #dc2626;
+  --color-chart-success: #059669;
+  --color-chart-warning: #d97706;
+
+  /* Accent shades that only exist so dark mode has a readable text colour. */
+  --color-danger-300: #fca5a5;
+  --color-success-300: #6ee7b7;
+  --color-warning-300: #fcd34d;
+  --color-info-300: #7dd3fc;
+
+  --font-sans:
+    "Inter var", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --radius-card: 1rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Dark palette
+   ---------------------------------------------------------------------------
+   Utilities compile down to `var(--color-…)`, so re-pointing the neutral and
+   tint scales here flips every screen at once. The accent *background* shades
+   (600/700) stay put — they are always paired with white text — while the
+   matching text utilities are lightened in the `utilities` layer below.
+--------------------------------------------------------------------------- */
+.dark {
+  color-scheme: dark;
+
+  --color-surface: #111c31;
+  --color-inverse: #e2e8f0;
+  --color-inverse-foreground: #0f172a;
+
+  /* Neutral scale, inverted for legibility on a dark canvas. */
+  --color-ink-50: #0e1728;
+  --color-ink-100: #0a1220;
+  --color-ink-200: #1c2740;
+  --color-ink-300: #2b3a56;
+  --color-ink-400: #6b7f9c;
+  --color-ink-500: #93a4bd;
+  --color-ink-600: #b6c3d6;
+  --color-ink-700: #d0daea;
+  --color-ink-800: #e6ecf5;
+  --color-ink-900: #f7fafc;
+
+  /* Soft accent panels become deep, tinted surfaces. */
+  --color-brand-50: #0b2b28;
+  --color-brand-100: #0f3a35;
+  --color-success-50: #082a1f;
+  --color-success-100: #0d3829;
+  --color-warning-50: #2a1f09;
+  --color-warning-100: #38290d;
+  --color-danger-50: #2b1114;
+  --color-danger-100: #3c181c;
+  --color-info-50: #082334;
+  --color-info-100: #0d3046;
+
+  --color-chart-grid: #1f2b42;
+  --color-chart-axis: #33435f;
+  --color-chart-label: #93a4bd;
+  --color-chart-legend: #b6c3d6;
+  --color-chart-line: #2dd4bf;
+  --color-chart-danger: #f87171;
+  --color-chart-success: #34d399;
+  --color-chart-warning: #fbbf24;
+}
+
+/* ---------------------------------------------------------------------------
+   Base layer
+--------------------------------------------------------------------------- */
+@layer base {
+  :root {
+    color-scheme: light;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-ink-100 text-ink-800 font-sans antialiased;
+    min-height: 100dvh;
+  }
+
+  /* A visible focus ring is a hard accessibility requirement — never remove
+     it without providing an alternative. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+
+  /* Respect the user's motion preference. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Numeric columns (blood pressure, heart rate) line up better with
+     tabular figures. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface border border-ink-200 rounded-2xl shadow-sm;
+  }
+
+  .card-pad {
+    @apply p-4 sm:p-6;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-ink-700 mb-1.5;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-ink-300 bg-surface px-4 py-3 text-base text-ink-900
+           placeholder:text-ink-400 shadow-sm transition
+           focus:border-brand-600 focus:ring-2 focus:ring-brand-200 focus:outline-none
+           disabled:bg-ink-100 disabled:text-ink-500;
+  }
+
+  .input-error {
+    @apply border-danger-500 focus:border-danger-600 focus:ring-danger-100;
+  }
+
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-3 focus:left-3
+           focus:rounded-lg focus:bg-surface focus:px-4 focus:py-2 focus:shadow-lg;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Accent text in dark mode
+   ---------------------------------------------------------------------------
+   The 700/800 shades are readable on white but nearly invisible on a dark
+   canvas. These are text-only overrides: solid accent buttons keep their
+   original background shades and white labels.
+--------------------------------------------------------------------------- */
+@layer utilities {
+  /* These two shades are only ever used as light text on brand-700/800
+     surfaces, so they must stay light in both themes. */
+  .dark :is(.text-brand-50, .text-brand-100) {
+    color: #ccfbf1;
+  }
+  .dark :is(.text-brand-700, .text-brand-800, .text-brand-900) {
+    color: var(--color-brand-300);
+  }
+  .dark :is(.text-danger-600, .text-danger-700, .text-danger-800, .text-danger-900) {
+    color: var(--color-danger-300);
+  }
+  .dark :is(.text-success-600, .text-success-700) {
+    color: var(--color-success-300);
+  }
+  .dark :is(.text-warning-600, .text-warning-700) {
+    color: var(--color-warning-300);
+  }
+  .dark :is(.text-info-600, .text-info-700) {
+    color: var(--color-info-300);
+  }
+}

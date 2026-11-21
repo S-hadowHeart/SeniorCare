@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f766e" />
+    <script>
+      // Apply the saved theme before the first paint so there is no white flash.
+      (function () {
+        try {
+          var stored = localStorage.getItem("sc-theme") || "system";
+          var dark =
+            stored === "dark" ||
+            (stored === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var root = document.documentElement;
+          if (dark) root.classList.add("dark");
+          root.style.colorScheme = dark ? "dark" : "light";
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", dark ? "#0a1220" : "#0f766e");
+        } catch (error) {
+          // Storage can be unavailable; the app still renders in the light theme.
+        }
+      })();
+    </script>
+    <meta
+      name="description"
+      content="SeniorCare — daily safety check-ins, health readings, medicine reminders and one-tap emergency alerts for the people you care about."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>SeniorCare</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      SeniorCare needs JavaScript enabled to work. Please enable it and reload the page.
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
