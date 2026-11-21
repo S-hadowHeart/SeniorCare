@@ -1,0 +1,36 @@
+{
+  "name": "seniorcare-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SeniorCare — production platform for senior safety, daily check-ins, vitals tracking, medication reminders and SOS alerting.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev --workspace server",
+    "dev:web": "npm run dev --workspace web",
+    "build": "npm run build --workspace server && npm run build --workspace web",
+    "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web",
+    "lint": "npm run lint --workspace server && npm run lint --workspace web",
+    "test": "npm run test --workspace server && npm run test --workspace web",
+    "prisma:generate": "npm run prisma:generate --workspace server",
+    "prisma:migrate": "npm run prisma:migrate --workspace server",
+    "prisma:seed": "npm run prisma:seed --workspace server",
+    "db:reset": "npm run db:reset --workspace server",
+    "setup": "npm install && npm run prisma:generate && npm run prisma:migrate && npm run prisma:seed"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.7"
+  },
+  "allowScripts": {
+    "prisma@7.10.1": true,
+    "@prisma/engines@7.10.1": true,
+    "esbuild@0.28.2": true
+  }
+}
