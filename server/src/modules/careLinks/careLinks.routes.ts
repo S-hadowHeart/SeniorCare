@@ -2,7 +2,7 @@ import { Router } from "express";
 import { asyncHandler } from "../../lib/asyncHandler.js";
 import { created, ok } from "../../lib/http.js";
 import { getElderAccess, listAccessibleElders } from "../../lib/access.js";
-import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors.js";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors.js";
 import { normalizeEmail } from "../../lib/crypto.js";
 import { prisma } from "../../lib/prisma.js";
 import { authenticate } from "../../middleware/authenticate.js";
@@ -241,10 +241,12 @@ careLinkItemRouter.patch(
     }
 
     // Owners manage the permissions; caregivers may only revoke themselves.
+    // Any other body (including an empty one) is a permission change, which is
+    // reserved for the owner — silently revoking the caller would be a
+    // surprising and destructive way to answer an unauthorised request.
     if (!isOwner) {
-      if (input.status && input.status !== "REVOKED") {
-        throw new ValidationError(
-          { field: "status" },
+      if (input.status !== "REVOKED") {
+        throw new ForbiddenError(
           "Only the account owner can change a care link's permissions.",
         );
       }
