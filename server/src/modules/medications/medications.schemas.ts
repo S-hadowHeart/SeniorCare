@@ -63,6 +63,13 @@ export const createMedicationSchema = medicationFields.superRefine((data, ctx) =
 export const updateMedicationSchema = medicationFields
   .partial()
   .extend({
+    // Override the create-time defaults. `partial()` alone leaves `default()`
+    // in place, which would re-inject `scheduleType: "DAILY"` and `times: []`
+    // into a one-field update (for example `{ dosage }`) and fail validation.
+    scheduleType: z.enum(["DAILY", "WEEKLY", "INTERVAL", "AS_NEEDED"]).optional(),
+    times: z.array(timeOfDaySchema).max(12).optional(),
+    daysOfWeek: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+    notifyCaregivers: z.boolean().optional(),
     active: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
