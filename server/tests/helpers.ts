@@ -115,3 +115,32 @@ export function accessTokenFrom(response: request.Response): string {
   }
   return token;
 }
+
+/** Authorization header value for a session. */
+export function bearer(token: string): { Authorization: string } {
+  return { Authorization: `Bearer ${token}` };
+}
+
+/** Register a senior and return the session plus their elder profile id. */
+export async function createSenior(app: Express, overrides: RegisterOverrides = {}) {
+  const { agent, response } = await registerUser(app, overrides);
+  return {
+    agent,
+    response,
+    token: accessTokenFrom(response),
+    elderId: (response.body as { data: { user: { elderId: string } } }).data.user.elderId,
+  };
+}
+
+/** Register a caregiver account. */
+export async function createCaregiver(
+  app: Express,
+  overrides: RegisterOverrides = {},
+) {
+  const { agent, response } = await registerUser(app, {
+    role: "CAREGIVER",
+    ...overrides,
+  });
+  return { agent, response, token: accessTokenFrom(response) };
+}
+
