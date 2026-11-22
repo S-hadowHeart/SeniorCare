@@ -22,7 +22,7 @@ shutdown and an end-to-end smoke suite.
 | --- | --- | --- |
 | 1 ✅ | Test harness for the API | Vitest configured with a disposable PostgreSQL database; helpers for creating users and sessions. |
 | 2 ✅ | Auth integration tests | Register, login, refresh rotation, replay detection, lockout and password change covered end to end. |
-| 3 | Authorization tests | Table-driven tests proving a caregiver cannot read an unrelated elder, and that each `CareLink` capability is enforced. |
+| 3 ✅ | Authorization tests | Table-driven tests proving a caregiver cannot read an unrelated elder, and that each `CareLink` capability is enforced. |
 | 4 | Domain tests | Vitals thresholding, medication schedule expansion and check-in status transitions. |
 | 5 | Web component tests | Auth context, form validation and the SOS flow with Testing Library. |
 | 6 | CI pipeline | GitHub Actions: install, `prisma generate`, typecheck, lint and tests on every PR. Required status check on `main`. |
@@ -80,6 +80,7 @@ A task is complete only when:
 ## Progress log
 
 - **2026-11-21** — Test harness landed (`server/vitest.config.ts`, `server/tests/`). Auth integration suite added: 20 tests covering registration, login, lockout, refresh rotation and replay revocation, logout, password change, audit logging and request-id correlation. Runs against an isolated schema via `TEST_DATABASE_URL`; the suite truncates only that schema.
+- **2026-11-22** — Authorization suite added (19 tests): elder-scoped access, care-link capability scopes, invitation binding, revocation, listing and administrator read access. Two bugs found and fixed: an unauthorised care-link `PATCH` silently revoked the caller instead of returning `403`, and partial medication updates were rejected because create-time defaults leaked into the update schema.
 
 ## Guiding principles
 

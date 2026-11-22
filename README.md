@@ -312,7 +312,9 @@ DATABASE_URL="$TEST_DATABASE_URL" DIRECT_DATABASE_URL="$TEST_DATABASE_URL" npx p
 cd ..
 ```
 
-`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The current auth suite (20 tests) covers:
+`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The suites currently contain **39 tests** across two areas.
+
+**Authentication (20 tests)**
 
 - account creation for seniors and caregivers, including the elder profile;
 - refresh-cookie hardening (`HttpOnly`, `SameSite=Strict`, path scope) and the guarantee that the token never appears in a JSON body;
@@ -323,6 +325,20 @@ cd ..
 - forged and malformed bearer tokens;
 - logout revocation and password-change session invalidation;
 - audit-log writes and request-id correlation on errors.
+
+**Authorization (19 tests)**
+
+- an unrelated caregiver, and an unrelated senior, are denied on every elder-scoped route;
+- the owner retains full access to their own record;
+- an active care link grants read access, but undelegated write capabilities are refused;
+- `manage medications` and `manage contacts` are enforced independently;
+- `acknowledge SOS` is enforced separately from read access;
+- revoked links and permission changes take effect on the very next request;
+- a caregiver cannot escalate their own permissions — the attempt returns `403` and leaves the link intact;
+- a pending invitation is bound to the invited e-mail, and a third party's attempt to accept it returns `404`;
+- `GET /elders` only returns records the caller can access;
+- inviting another caregiver requires both family relation and contact-management rights;
+- an administrator may read any record but still cannot edit the clinical profile.
 
 ### End-to-end smoke suite
 
