@@ -269,7 +269,7 @@ Useful scripts: `npm run typecheck`, `npm run build`, `npm run prisma:studio`, `
 │   │   ├── migrations/        # versioned SQL
 │   │   └── seed.ts            # demo data
 │   ├── scripts/smoke.ts       # end-to-end smoke suite
-│   ├── tests/                 # Vitest integration suites
+│   ├── tests/                 # Vitest unit + integration suites
 │   └── src/
 │       ├── config/env.ts      # validated configuration
 │       ├── middleware/        # security, CORS, rate limit, validation, errors
@@ -293,9 +293,9 @@ Useful scripts: `npm run typecheck`, `npm run build`, `npm run prisma:studio`, `
 
 ## Testing
 
-### Integration suites (Vitest)
+### Test suites (Vitest)
 
-The API has an integration suite that runs against a real PostgreSQL database through the same Express app and Prisma client as production — no mocks of the security layers.
+The server has two layers of tests: fast unit suites for pure domain logic, and integration suites that run against a real PostgreSQL database through the same Express app and Prisma client as production — no mocks of the security layers.
 
 ```bash
 # Point the suite at an isolated database or schema (it truncates every table):
@@ -312,7 +312,7 @@ DATABASE_URL="$TEST_DATABASE_URL" DIRECT_DATABASE_URL="$TEST_DATABASE_URL" npx p
 cd ..
 ```
 
-`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The suites currently contain **39 tests** across two areas.
+`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The suites currently contain **143 tests** across seven files.
 
 **Authentication (20 tests)**
 
@@ -340,6 +340,26 @@ cd ..
 - inviting another caregiver requires both family relation and contact-management rights;
 - an administrator may read any record but still cannot edit the clinical profile.
 
+**Domain logic (91 tests)**
+
+- every clinical threshold boundary for blood pressure, heart rate, temperature, oxygen saturation and blood sugar, in both `mg/dL` and `mmol/L`;
+- a blood-pressure reading without a diastolic value is classified from systolic alone instead of being coerced to zero (regression test);
+- time-zone conversion, DST-aware local-day boundaries (the 23- and 25-hour days) and strict `HH:mm` parsing;
+- medication expansion for daily, weekly and interval schedules, including start/end dates, malformed times and doses that straddle a DST transition.
+
+**Check-in lifecycle (10 tests)**
+
+- the senior records `SAFE` or `NEEDS_HELP`, and the free-text note is encrypted at rest;
+- `MISSED` is system-generated only; out-of-range moods and future timestamps are rejected with `400`;
+- only the senior may record their own check-in — a caregiver with read access receives `403`, because otherwise they could silently satisfy the watchdog;
+- a help request notifies every active caregiver and e-mails contacts with the dedicated help-request copy, never the missed-check-in copy;
+- the watchdog creates exactly one `MISSED` record and one notification per day, never duplicates on re-run, and stays silent once a real check-in exists.
+
+**Notification templates (3 tests)**
+
+- a help request and a missed check-in are distinct messages, so a contact is never told that someone “has not checked in” when they have just asked for help;
+- optional notes are omitted cleanly, and the plain-text and HTML versions carry the same information.
+
 ### End-to-end smoke suite
 
 A second suite exercises the whole platform over HTTP against a running, seeded API:
@@ -348,7 +368,7 @@ A second suite exercises the whole platform over HTTP against a running, seeded 
 node --import tsx server/scripts/smoke.ts http://127.0.0.1:4000/api/v1
 ```
 
-It covers registration and login for all roles, check-ins, vitals, medication scheduling and adherence, emergency contacts, the SOS lifecycle (trigger, acknowledge, resolve, cancel), care-link invitations and the realtime event stream. CI and the remaining suites are tracked in the roadmap.
+It covers registration and login for all roles, check-ins, vitals, medication scheduling and adherence, emergency contacts, the SOS lifecycle (trigger, acknowledge, resolve, cancel), care-link invitations and the realtime event stream. CI and the web component suite are tracked in the roadmap.
 
 ---
 
@@ -364,7 +384,7 @@ It covers registration and login for all roles, check-ins, vitals, medication sc
 
 ## Roadmap
 
-The next milestones — automated test suites, CI, container images, shared pub/sub for multi-instance SSE, and a distributed job lock — are tracked in [`docs/roadmap.md`](docs/roadmap.md).
+The next milestones — CI, web component tests, container images, shared pub/sub for multi-instance SSE, and a distributed job lock — are tracked in [`docs/roadmap.md`](docs/roadmap.md).
 
 ---
 
