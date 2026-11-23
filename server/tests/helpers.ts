@@ -128,6 +128,7 @@ export async function createSenior(app: Express, overrides: RegisterOverrides = 
     agent,
     response,
     token: accessTokenFrom(response),
+    userId: (response.body as { data: { user: { id: string } } }).data.user.id,
     elderId: (response.body as { data: { user: { elderId: string } } }).data.user.elderId,
   };
 }
@@ -141,6 +142,11 @@ export async function createCaregiver(
     role: "CAREGIVER",
     ...overrides,
   });
-  return { agent, response, token: accessTokenFrom(response) };
+  return {
+    agent,
+    response,
+    token: accessTokenFrom(response),
+    userId: (response.body as { data: { user: { id: string } } }).data.user.id,
+  };
 }
 

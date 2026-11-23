@@ -152,7 +152,58 @@ export function missedCheckInEmail(input: MissedCheckInEmailInput): {
       ctaLabel: "Open the dashboard",
       ctaUrl: `${env.WEB_APP_URL}/caregiver`,
     }),
-    text: `No safety check-in from ${input.elderName} today. Please get in touch with them.`,
+    text: [
+      `No safety check-in from ${input.elderName} today.`,
+      `Daily check-ins are expected before ${String(input.deadlineHour).padStart(2, "0")}:00.`,
+      "Please get in touch with them.",
+    ].join("\n"),
+  };
+}
+
+export interface NeedsHelpEmailInput {
+  elderName: string;
+  note?: string | null;
+}
+
+/**
+ * A senior explicitly pressed "I need help". This must never reuse the
+ * missed-check-in copy: telling a contact that someone "has not checked in"
+ * when they have just asked for help sends the wrong message.
+ */
+export function needsHelpEmail(input: NeedsHelpEmailInput): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const subject = `${input.elderName} asked for help`;
+
+  const bodyHtml = `
+    <p><strong>${input.elderName}</strong> has just confirmed their daily check-in and asked for help.</p>
+    ${
+      input.note
+        ? `<p style="margin:16px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #dc2626;border-radius:6px;">“${input.note}”</p>`
+        : ""
+    }
+    <p>Please contact them as soon as possible. If this is an emergency, call the local emergency number.</p>
+  `;
+
+  return {
+    subject,
+    html: layout({
+      title: `🆘 ${input.elderName} asked for help`,
+      preheader: `${input.elderName} requested help during their daily check-in.`,
+      bodyHtml,
+      ctaLabel: "Open the dashboard",
+      ctaUrl: `${env.WEB_APP_URL}/caregiver`,
+      footerNote: "This is an automated safety notification from SeniorCare.",
+    }),
+    text: [
+      `${input.elderName} asked for help during their daily check-in.`,
+      input.note ? `Message: ${input.note}` : "",
+      "Please contact them as soon as possible.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
   };
 }
 

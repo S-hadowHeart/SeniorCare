@@ -2,6 +2,7 @@ import { Router } from "express";
 import { asyncHandler } from "../../lib/asyncHandler.js";
 import { created, ok } from "../../lib/http.js";
 import { getElderAccess } from "../../lib/access.js";
+import { ForbiddenError } from "../../lib/errors.js";
 import { encryptNullable, decryptNullable } from "../../lib/crypto.js";
 import { prisma } from "../../lib/prisma.js";
 import { authenticate } from "../../middleware/authenticate.js";
@@ -10,7 +11,7 @@ import { endOfLocalDay, startOfLocalDay } from "../../lib/time.js";
 import { realtimeBus } from "../../realtime/bus.js";
 import { notify, resolveElderRecipients } from "../../notifications/service.js";
 import { sendMail } from "../../notifications/mailer.js";
-import { missedCheckInEmail } from "../../notifications/templates.js";
+import { needsHelpEmail } from "../../notifications/templates.js";
 import {
   createCheckInSchema,
   elderIdParamSchema,
@@ -36,7 +37,14 @@ checkInsRouter.post(
     const { elderId } = validatedParams<{ elderId: string }>(req);
     const input = validatedBody<CreateCheckInInput>(req);
 
-    const { elder } = await getElderAccess(req.auth!, elderId, "view");
+    const { elder, isOwner } = await getElderAccess(req.auth!, elderId, "view");
+
+    // The daily check-in is the senior's own safety confirmation. If a
+    // caregiver could submit one on their behalf, it would silently satisfy
+    // the missed check-in watchdog and hide a real emergency.
+    if (!isOwner) {
+      throw new ForbiddenError("Only the senior can record their own daily check-in.");
+    }
 
     const checkIn = await prisma.checkIn.create({
       data: {
@@ -74,9 +82,9 @@ checkInsRouter.post(
       );
 
       // Contacts without an account still receive an e-mail.
-      const email = missedCheckInEmail({
+      const email = needsHelpEmail({
         elderName: elder.displayName,
-        deadlineHour: elder.checkInDeadlineHour,
+        note: input.note ?? null,
       });
 
       await Promise.all(
