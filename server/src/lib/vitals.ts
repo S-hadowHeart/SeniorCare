@@ -33,25 +33,31 @@ const rules: Record<VitalType, Rule> = {
     unit: "mmHg",
     normalRange: "90–130 / 60–85 mmHg",
     evaluate: (systolic, diastolic) => {
-      if (systolic >= 180 || (diastolic ?? 0) >= 120) {
+      // A reading may carry only the systolic value. Treat a missing
+      // secondary value as "not measured" rather than as zero — otherwise
+      // every such reading would be flagged as critically low.
+      const d =
+        typeof diastolic === "number" && Number.isFinite(diastolic) ? diastolic : null;
+
+      if (systolic >= 180 || (d !== null && d >= 120)) {
         return {
           severity: "critical",
           warning: "Blood pressure is in the hypertensive crisis range. Seek medical help now.",
         };
       }
-      if (systolic < 85 || (diastolic ?? 0) < 50) {
+      if (systolic < 85 || (d !== null && d < 50)) {
         return {
           severity: "critical",
           warning: "Blood pressure is dangerously low. Seek medical help now.",
         };
       }
-      if (systolic >= 140 || (diastolic ?? 0) >= 90) {
+      if (systolic >= 140 || (d !== null && d >= 90)) {
         return {
           severity: "warning",
           warning: "Blood pressure is above the usual target range.",
         };
       }
-      if (systolic >= 130 || (diastolic ?? 0) >= 85) {
+      if (systolic >= 130 || (d !== null && d >= 85)) {
         return {
           severity: "warning",
           warning: "Blood pressure is slightly above the usual target range.",

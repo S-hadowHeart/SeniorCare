@@ -83,7 +83,14 @@ export function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
  * starts) resolve to the instant right after the gap.
  */
 export function zonedTimeToUtc(
-  { year, month, day, hour, minute, second = 0 }: DateParts,
+  {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second = 0,
+  }: Omit<DateParts, "second"> & { second?: number },
   timeZone: string,
 ): Date {
   const naiveUtc = Date.UTC(year, month - 1, day, hour, minute, second);
