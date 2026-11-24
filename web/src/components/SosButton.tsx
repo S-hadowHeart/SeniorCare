@@ -75,7 +75,7 @@ export function SosButton({
         description="Your family and emergency contacts will be notified straight away."
         footer={
           <>
-            <Button variant="outline" size="lg" onClick={() => setConfirmOpen(false)}>
+            <Button variant="outline" size="lg" onClick={() => setConfirmOpen(false)} data-autofocus>
               Cancel
             </Button>
             <Button
@@ -83,7 +83,6 @@ export function SosButton({
               size="lg"
               onClick={() => void send()}
               leftIcon={<PhoneCall className="size-5" aria-hidden="true" />}
-              data-autofocus
             >
               Send alert now
             </Button>
