@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -18,6 +19,16 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     tsconfigPaths: true,
+  },
+  test: {
+    // Component tests run in a real DOM implementation, through the same
+    // React components the browser loads.
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
+    clearMocks: true,
+    restoreMocks: true,
+    css: false,
   },
   server: {
     port: 5173,
