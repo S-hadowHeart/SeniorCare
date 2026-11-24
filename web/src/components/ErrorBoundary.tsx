@@ -24,6 +24,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     // Keep the details in the console for debugging, not on screen.
+    // eslint-disable-next-line no-console
     console.error("Unhandled UI error", error, info.componentStack);
   }
 
