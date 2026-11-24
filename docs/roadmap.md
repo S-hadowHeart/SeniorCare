@@ -24,7 +24,7 @@ shutdown and an end-to-end smoke suite.
 | 2 ✅ | Auth integration tests | Register, login, refresh rotation, replay detection, lockout and password change covered end to end. |
 | 3 ✅ | Authorization tests | Table-driven tests proving a caregiver cannot read an unrelated elder, and that each `CareLink` capability is enforced. |
 | 4 ✅ | Domain tests | Vitals thresholding, medication schedule expansion and check-in status transitions. |
-| 5 | Web component tests | Auth context, form validation and the SOS flow with Testing Library. |
+| 5 ✅ | Web component tests | Auth context, form validation and the SOS flow with Testing Library. |
 | 6 | CI pipeline | GitHub Actions: install, `prisma generate`, typecheck, lint and tests on every PR. Required status check on `main`. |
 | 7 | Coverage and branch protection | Coverage reporting, protected `main`, required review and linear history. |
 
@@ -82,6 +82,7 @@ A task is complete only when:
 - **2026-11-21** — Test harness landed (`server/vitest.config.ts`, `server/tests/`). Auth integration suite added: 20 tests covering registration, login, lockout, refresh rotation and replay revocation, logout, password change, audit logging and request-id correlation. Runs against an isolated schema via `TEST_DATABASE_URL`; the suite truncates only that schema.
 - **2026-11-22** — Authorization suite added (19 tests): elder-scoped access, care-link capability scopes, invitation binding, revocation, listing and administrator read access. Two bugs found and fixed: an unauthorised care-link `PATCH` silently revoked the caller instead of returning `403`, and partial medication updates were rejected because create-time defaults leaked into the update schema.
 - **2026-11-23** — Domain and lifecycle suites added (104 tests), bringing the total to 143. Threshold boundaries for every vital type, DST-safe medication schedule expansion, and the check-in/escalation state machine are now pinned by tests. Four defects found and fixed: a blood-pressure reading without a diastolic value was classified as critically low; a caregiver with read access could record the senior's own `SAFE` check-in (silently satisfying the watchdog); a check-in could be pre-recorded for a future date; and a `NEEDS_HELP` check-in sent contacts the missed-check-in e-mail. Added the missing ESLint flat config so `npm run lint` actually runs.
+- **2026-11-24** — Web component suite added (27 tests) in jsdom with Testing Library: the auth state machine, sign-in/sign-up validation and the full SOS flow. Two modal defects found and fixed: the focus effect depended on the inline `onClose` callback and therefore re-ran on every keystroke, stealing focus from the message field; and the confirmation dialog autofocused the destructive "Send alert now" button instead of Cancel. Added the web ESLint flat config and removed `--passWithNoTests`, so the web test and lint scripts are now real gates.
 
 ## Guiding principles
 

@@ -280,9 +280,10 @@ Useful scripts: `npm run typecheck`, `npm run build`, `npm run prisma:studio`, `
 │       └── lib/               # crypto, jwt, access control, prisma, logging
 ├── web/                       # React 19 + Vite client
 │   └── src/
-│       ├── pages/             # senior, caregiver and auth experiences
-│       ├── components/        # design system, charts, layout, SOS button
-│       ├── context/           # auth, theme, toast, realtime
+│       ├── pages/             # senior, caregiver and auth experiences (+ form tests)
+│       ├── components/        # design system, charts, layout, SOS button (+ tests)
+│       ├── context/           # auth, theme, toast, realtime (+ auth tests)
+│       ├── test/              # Vitest + Testing Library setup
 │       └── lib/               # API client, formatting, geolocation
 ├── docs/roadmap.md
 ├── package.json               # npm workspaces
@@ -295,14 +296,17 @@ Useful scripts: `npm run typecheck`, `npm run build`, `npm run prisma:studio`, `
 
 ### Test suites (Vitest)
 
-The server has two layers of tests: fast unit suites for pure domain logic, and integration suites that run against a real PostgreSQL database through the same Express app and Prisma client as production — no mocks of the security layers.
+The platform has two test layers. The server suites pair fast unit tests for pure domain logic with integration tests that run against a real PostgreSQL database through the same Express app and Prisma client as production — no mocks of the security layers. The web client runs its React components in jsdom through Testing Library.
 
 ```bash
-# Point the suite at an isolated database or schema (it truncates every table):
+# Point the server suite at an isolated database or schema (it truncates every table):
 export TEST_DATABASE_URL="postgresql://user:pass@host:5432/seniorcare_test?schema=seniorcare_test"
 
 npm run test --workspace server
+npm run test --workspace web   # no database required
 ```
+
+`npm test` at the repository root runs both. Together the suites contain **170 tests across ten files**.
 
 On the first run, apply the migrations to that database (create the schema first if you are using one):
 
@@ -312,7 +316,7 @@ DATABASE_URL="$TEST_DATABASE_URL" DIRECT_DATABASE_URL="$TEST_DATABASE_URL" npx p
 cd ..
 ```
 
-`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The suites currently contain **143 tests** across seven files.
+`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The server suites currently contain **143 tests** across seven files.
 
 **Authentication (20 tests)**
 
@@ -360,6 +364,33 @@ cd ..
 - a help request and a missed check-in are distinct messages, so a contact is never told that someone “has not checked in” when they have just asked for help;
 - optional notes are omitted cleanly, and the plain-text and HTML versions carry the same information.
 
+### Web component tests
+
+**27 tests across three files**, run in jsdom with Testing Library.
+
+**Authentication state (7 tests)**
+
+- the provider settles on anonymous when there is no refresh cookie, and restores the session when the cookie and `/auth/me` both succeed;
+- sign-in and registration store the user and access token;
+- signing out clears local state even when the revoke request fails;
+- using `useAuth` outside the provider fails loudly.
+
+**Sign-in and registration (13 tests)**
+
+- required fields, e-mail format, password length, letter/number composition, password confirmation and phone format are validated before any request;
+- the API's problem detail is shown when credentials are rejected, and a successful sign-in navigates to the right home (including the originally requested page);
+- the caregiver role hides the elder profile and submits no elder payload, while the senior role maps preferred name, date of birth, blood type and comma-separated conditions into the API contract;
+- demo-account shortcuts fill the form.
+
+**SOS flow (7 tests)**
+
+- the alert is sent before the GPS lookup finishes, then enriched with a second update when the position arrives;
+- a denied location permission still sends the alert and explains why no map is attached;
+- cancelling before sending makes no request, and an active alert can be cancelled afterwards;
+- a failed send shows an explicit failure state with the emergency-services instruction;
+- an account without an elder profile cannot trigger an alert;
+- the confirmation dialog focuses **Cancel**, never the destructive action, and keeps focus in the message field while the user types.
+
 ### End-to-end smoke suite
 
 A second suite exercises the whole platform over HTTP against a running, seeded API:
@@ -368,7 +399,7 @@ A second suite exercises the whole platform over HTTP against a running, seeded 
 node --import tsx server/scripts/smoke.ts http://127.0.0.1:4000/api/v1
 ```
 
-It covers registration and login for all roles, check-ins, vitals, medication scheduling and adherence, emergency contacts, the SOS lifecycle (trigger, acknowledge, resolve, cancel), care-link invitations and the realtime event stream. CI and the web component suite are tracked in the roadmap.
+It covers registration and login for all roles, check-ins, vitals, medication scheduling and adherence, emergency contacts, the SOS lifecycle (trigger, acknowledge, resolve, cancel), care-link invitations and the realtime event stream. CI is tracked in the roadmap.
 
 ---
 
