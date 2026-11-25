@@ -2,8 +2,9 @@
 
 > A production-grade platform for senior safety — daily check-ins, vital-sign tracking, medication adherence and SOS alerting, built for seniors, their families and professional caregivers.
 
+[![CI](https://github.com/S-hadowHeart/SeniorCare/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/S-hadowHeart/SeniorCare/actions/workflows/ci.yml)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
-![Node](https://img.shields.io/badge/node-%3E%3D20.19-3c873a)
+![Node](https://img.shields.io/badge/node-%E2%89%A522.12-3c873a)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-4169e1)
 ![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
@@ -23,6 +24,7 @@
 - [Getting started](#getting-started)
 - [Project structure](#project-structure)
 - [Testing](#testing)
+- [Continuous integration](#continuous-integration)
 - [Operations](#operations)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
@@ -97,7 +99,7 @@ flowchart LR
 
 | Layer | Choice | Why |
 | --- | --- | --- |
-| API | **Node.js 20 LTS · Express 5** | Mature middleware ecosystem, first-class async error propagation. |
+| API | **Node.js 24 LTS · Express 5** | Mature middleware ecosystem, first-class async error propagation. |
 | Language | **TypeScript 5.9 (strict)** | End-to-end type safety across the monorepo. |
 | ORM | **Prisma 7 + `@prisma/adapter-pg`** | Typed queries, migration history, and a driver adapter that removes the native engine from the deployment artifact. |
 | Database | **PostgreSQL 15+** | Transactions, enums, partial indexes and `jsonb` for audit metadata. |
@@ -222,7 +224,7 @@ Errors follow RFC 9457 (`application/problem+json`) and always carry a `requestI
 
 ## Getting started
 
-**Prerequisites:** Node.js **20.19+**, PostgreSQL **15+**, npm 10+.
+**Prerequisites:** Node.js **22.12 LTS or 24 LTS** (see `.nvmrc`), PostgreSQL **15+**, npm 10+.
 
 ```bash
 # 1. Install workspace dependencies
@@ -306,7 +308,7 @@ npm run test --workspace server
 npm run test --workspace web   # no database required
 ```
 
-`npm test` at the repository root runs both. Together the suites contain **170 tests across ten files**.
+`npm test` at the repository root runs both. Together the suites contain **174 tests across twelve files**.
 
 On the first run, apply the migrations to that database (create the schema first if you are using one):
 
@@ -316,7 +318,7 @@ DATABASE_URL="$TEST_DATABASE_URL" DIRECT_DATABASE_URL="$TEST_DATABASE_URL" npx p
 cd ..
 ```
 
-`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The server suites currently contain **143 tests** across seven files.
+`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The server suites currently contain **147 tests** across nine files. A dedicated isolation test asserts that the live connection's `current_schema()` is the schema named in that URL, so a client that ignores the parameter fails loudly instead of truncating `public`.
 
 **Authentication (20 tests)**
 
@@ -364,6 +366,12 @@ cd ..
 - a help request and a missed check-in are distinct messages, so a contact is never told that someone “has not checked in” when they have just asked for help;
 - optional notes are omitted cleanly, and the plain-text and HTML versions carry the same information.
 
+**Database isolation (4 tests)**
+
+- the client connects to the schema named by `?schema=` instead of falling back to `public`, and raw SQL such as `TRUNCATE` resolves against the same schema;
+- a URL without a schema leaves the connection untouched;
+- a schema name containing quotes or statement separators is rejected before it can reach the server's startup parameters.
+
 ### Web component tests
 
 **27 tests across three files**, run in jsdom with Testing Library.
@@ -399,7 +407,17 @@ A second suite exercises the whole platform over HTTP against a running, seeded 
 node --import tsx server/scripts/smoke.ts http://127.0.0.1:4000/api/v1
 ```
 
-It covers registration and login for all roles, check-ins, vitals, medication scheduling and adherence, emergency contacts, the SOS lifecycle (trigger, acknowledge, resolve, cancel), care-link invitations and the realtime event stream. CI is tracked in the roadmap.
+It covers registration and login for all roles, check-ins, vitals, medication scheduling and adherence, emergency contacts, the SOS lifecycle (trigger, acknowledge, resolve, cancel), care-link invitations and the realtime event stream. The smoke suite is an operator check against a seeded instance; CI runs the Vitest suites and the production build.
+
+### Continuous integration
+
+Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml) on GitHub Actions:
+
+- Node.js 24 from `.nvmrc`, with npm dependency caching;
+- a PostgreSQL 17 service container, a dedicated `seniorcare_test` schema and `prisma migrate deploy`;
+- Prisma client generation, typecheck, ESLint, the production build and both Vitest suites — against a throwaway database with no repository secrets.
+
+The **Build and test** check is required on `main`, so a pull request cannot merge while the suite is red.
 
 ---
 
@@ -415,7 +433,7 @@ It covers registration and login for all roles, check-ins, vitals, medication sc
 
 ## Roadmap
 
-The next milestones — CI, web component tests, container images, shared pub/sub for multi-instance SSE, and a distributed job lock — are tracked in [`docs/roadmap.md`](docs/roadmap.md).
+The remaining milestones — coverage reporting, container images, shared pub/sub for multi-instance SSE, and a distributed job lock — are tracked in [`docs/roadmap.md`](docs/roadmap.md).
 
 ---
 
