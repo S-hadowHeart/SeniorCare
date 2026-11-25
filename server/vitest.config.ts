@@ -31,10 +31,10 @@ export default defineConfig({
       // Floors sit just below the current totals. They are a ratchet: adding
       // untested code fails the build until it is covered.
       thresholds: {
-        statements: 64,
-        branches: 55,
-        functions: 54,
-        lines: 65,
+        statements: 65.0,
+        branches: 56.6,
+        functions: 55.6,
+        lines: 66.1,
       },
     },
   },
