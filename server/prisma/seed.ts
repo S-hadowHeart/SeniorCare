@@ -14,14 +14,20 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { hashPassword } from "../src/lib/crypto.js";
+import { resolveDatabaseSchema } from "../src/lib/database.js";
 
 const connectionString =
   process.env.DIRECT_DATABASE_URL ??
   process.env.DATABASE_URL ??
   "postgresql://seniorcare:seniorcare_dev_pw@127.0.0.1:5432/seniorcare?schema=public";
 
+const schema = resolveDatabaseSchema(connectionString);
+
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString, max: 5 }),
+  adapter: new PrismaPg(
+    { connectionString, max: 5, ...schema.pool },
+    schema.adapter,
+  ),
 });
 
 const SENIOR = {
