@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The integration suites run against a real PostgreSQL instance, as they do
+    # in development. A service container keeps CI self-contained: no shared
+    # database and no secrets beyond the throwaway credentials below.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: seniorcare
+          POSTGRES_PASSWORD: seniorcare
+          POSTGRES_DB: seniorcare_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U seniorcare -d seniorcare_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      DATABASE_URL: postgresql://seniorcare:seniorcare@127.0.0.1:5432/seniorcare_test?schema=seniorcare_test
+      DIRECT_DATABASE_URL: postgresql://seniorcare:seniorcare@127.0.0.1:5432/seniorcare_test?schema=seniorcare_test
+      TEST_DATABASE_URL: postgresql://seniorcare:seniorcare@127.0.0.1:5432/seniorcare_test?schema=seniorcare_test
+      PGPASSWORD: seniorcare
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The suites truncate their tables, so they get a dedicated schema. The
+      # database exists from the service definition; the schema is created here
+      # before the migrations run.
+      - name: Create the isolated test schema
+        run: psql -h 127.0.0.1 -U seniorcare -d seniorcare_test -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA IF NOT EXISTS seniorcare_test;'
+
+      - name: Generate the Prisma client
+        run: npm run prisma:generate
+
+      - name: Apply migrations to the test database
+        run: npm run prisma:migrate:deploy --workspace server
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Server tests
+        run: npm run test --workspace server
+
+      - name: Web tests
+        run: npm run test --workspace web
