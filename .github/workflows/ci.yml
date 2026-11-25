@@ -78,8 +78,22 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Server tests
-        run: npm run test --workspace server
+      - name: Server tests with coverage
+        run: npm run test:coverage --workspace server
 
-      - name: Web tests
-        run: npm run test --workspace web
+      - name: Web tests with coverage
+        run: npm run test:coverage --workspace web
+
+      - name: Coverage summary
+        if: always()
+        run: node scripts/coverage-summary.mjs
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-reports
+          path: |
+            server/coverage
+            web/coverage
+          retention-days: 14

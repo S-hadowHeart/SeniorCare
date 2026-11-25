@@ -29,6 +29,22 @@ export default defineConfig({
     clearMocks: true,
     restoreMocks: true,
     css: false,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "lcov", "html"],
+      reportsDirectory: "./coverage",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/main.tsx", "src/test/**", "src/**/*.d.ts"],
+      // The component suite currently exercises auth, forms and the SOS flow;
+      // these floors prevent those gains from being diluted by new untested
+      // code while the remaining pages gain coverage.
+      thresholds: {
+        statements: 20,
+        branches: 13,
+        functions: 17,
+        lines: 21,
+      },
+    },
   },
   server: {
     port: 5173,

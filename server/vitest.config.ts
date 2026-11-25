@@ -20,5 +20,22 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "lcov", "html"],
+      reportsDirectory: "./coverage",
+      include: ["src/**/*.ts"],
+      // Generated Prisma client, the process bootstrap and ambient types are
+      // not application logic; counting them would only drown the signal.
+      exclude: ["src/generated/**", "src/index.ts", "src/**/*.d.ts"],
+      // Floors sit just below the current totals. They are a ratchet: adding
+      // untested code fails the build until it is covered.
+      thresholds: {
+        statements: 64,
+        branches: 55,
+        functions: 54,
+        lines: 65,
+      },
+    },
   },
 });
