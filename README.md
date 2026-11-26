@@ -24,6 +24,7 @@
 - [Getting started](#getting-started)
 - [Project structure](#project-structure)
 - [Testing](#testing)
+- [Coverage](#coverage)
 - [Continuous integration](#continuous-integration)
 - [Operations](#operations)
 - [Roadmap](#roadmap)
@@ -399,6 +400,17 @@ cd ..
 - an account without an elder profile cannot trigger an alert;
 - the confirmation dialog focuses **Cancel**, never the destructive action, and keeps focus in the message field while the user types.
 
+### Coverage
+
+Both Vitest suites collect V8 coverage with `npm run test:coverage`. The build fails if the global totals drop below the committed floors:
+
+| Suite | Statements | Branches | Functions | Lines |
+| --- | --- | --- | --- | --- |
+| API | 65.0% | 56.6% | 55.6% | 66.1% |
+| Web | 21.6% | 13.7% | 17.9% | 22.5% |
+
+CI prints the current totals in the job summary and uploads the `json-summary`, `lcov` and HTML reports as the `coverage-reports` artifact. Generated Prisma code, the process bootstrap and the test harness are excluded, so the numbers describe application code. The web floors sit close to the current totals while the remaining pages gain component coverage; they ratchet upward as tests are added.
+
 ### End-to-end smoke suite
 
 A second suite exercises the whole platform over HTTP against a running, seeded API:
@@ -415,9 +427,10 @@ Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.g
 
 - Node.js 24 from `.nvmrc`, with npm dependency caching;
 - a PostgreSQL 17 service container, a dedicated `seniorcare_test` schema and `prisma migrate deploy`;
-- Prisma client generation, typecheck, ESLint, the production build and both Vitest suites — against a throwaway database with no repository secrets.
+- Prisma client generation, typecheck, ESLint, the production build and both Vitest suites with V8 coverage — against a throwaway database with no repository secrets;
+- a job summary with the coverage totals and a `coverage-reports` artifact containing the JSON, LCOV and HTML reports.
 
-The **Build and test** check is required on `main`, so a pull request cannot merge while the suite is red.
+`main` is protected: the **Build and test** check is required and must be up to date, pull requests need one approving review (stale approvals are dismissed), history must be linear, conversations must be resolved, and force pushes or deletions are blocked.
 
 ---
 
