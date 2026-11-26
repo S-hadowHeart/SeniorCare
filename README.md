@@ -108,6 +108,7 @@ flowchart LR
 | Auth | **`jose` (JWT) + `@node-rs/argon2`** | Stateless short-lived access tokens; memory-hard password hashing. |
 | Realtime | **Server-Sent Events** | One-way push with automatic reconnect, no extra protocol or sticky-session state. |
 | Jobs | **`node-cron`** | Check-in watchdog and medication reminders. |
+| Rate limiting | **`express-rate-limit` + optional Redis** | Shared counters across instances; per-process fallback when the store is unavailable. |
 | Web | **React 19 · Vite · Tailwind CSS v4** | Fast iteration, modern concurrency, utility-first styling. |
 | Data fetching | **TanStack Query · react-hook-form + Zod** | Cache-aware server state and schema-validated forms. |
 | Charts | **Recharts** | Accessible SVG trend and adherence visualisations. |
@@ -181,6 +182,7 @@ Security is treated as a set of enforced defaults rather than a checklist. The c
 - **Probes that mean something.** `/health` is a pure liveness probe that never touches the database; `/health/ready` verifies connectivity with `SELECT 1` so a rolling deploy does not route traffic to an instance that cannot serve it.
 - **Graceful shutdown.** On `SIGTERM`/`SIGINT` the server stops accepting connections, drains SSE streams, closes keep-alive sockets, disconnects the pool, and force-exits after a 15 s budget — with a handler for uncaught exceptions.
 - **Realtime without polling.** SSE with compression correctly bypassed for event streams, so proxies do not buffer alerts.
+- **Shared rate limits when scaled out.** `express-rate-limit` uses per-process memory by default; setting `REDIS_URL` moves every limiter's counters into Redis so limits hold across instances. A failed Redis command degrades to the local memory store with a throttled warning, so a cache outage cannot take down login or SOS.
 - **Client-side efficiency.** React Query deduplicates and caches server state; strong ETags and gzip/brotli compression reduce repeat payloads.
 - **Operational limits documented honestly.** Multi-instance deployments should back the SSE hub with a shared pub/sub and run scheduled jobs behind a distributed lock; both are tracked in [`docs/roadmap.md`](docs/roadmap.md).
 
@@ -309,7 +311,7 @@ npm run test --workspace server
 npm run test --workspace web   # no database required
 ```
 
-`npm test` at the repository root runs both. Together the suites contain **174 tests across twelve files**.
+`npm test` at the repository root runs both. Together the suites contain **184 tests across thirteen files**.
 
 On the first run, apply the migrations to that database (create the schema first if you are using one):
 
@@ -319,7 +321,7 @@ DATABASE_URL="$TEST_DATABASE_URL" DIRECT_DATABASE_URL="$TEST_DATABASE_URL" npx p
 cd ..
 ```
 
-`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The server suites currently contain **147 tests** across nine files. A dedicated isolation test asserts that the live connection's `current_schema()` is the schema named in that URL, so a client that ignores the parameter fails loudly instead of truncating `public`.
+`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The server suites currently contain **157 tests** across ten files. A dedicated isolation test asserts that the live connection's `current_schema()` is the schema named in that URL, so a client that ignores the parameter fails loudly instead of truncating `public`.
 
 **Authentication (20 tests)**
 
@@ -373,6 +375,13 @@ cd ..
 - a URL without a schema leaves the connection untouched;
 - a schema name containing quotes or statement separators is rejected before it can reach the server's startup parameters.
 
+**Rate-limit store (10 tests)**
+
+- Redis counters are shared and reset through the store; the integration test runs whenever `REDIS_URL` is set, and CI provides a disposable Redis 7 instance;
+- increment, decrement, key reset and full reset fall back to a process-local memory store when Redis throws, so a cache outage degrades instead of failing requests;
+- the first command connects lazily, a failed connection is retried at most every 30 seconds, and `init`/`shutdown` are delegated to both stores;
+- test runs use the memory store, so the API suites never depend on a running Redis.
+
 ### Web component tests
 
 **27 tests across three files**, run in jsdom with Testing Library.
@@ -406,7 +415,7 @@ Both Vitest suites collect V8 coverage with `npm run test:coverage`. The build f
 
 | Suite | Statements | Branches | Functions | Lines |
 | --- | --- | --- | --- | --- |
-| API | 65.0% | 56.6% | 55.6% | 66.1% |
+| API | 65.5% | 56.5% | 57.0% | 66.5% |
 | Web | 21.6% | 13.7% | 17.9% | 22.5% |
 
 CI prints the current totals in the job summary and uploads the `json-summary`, `lcov` and HTML reports as the `coverage-reports` artifact. Generated Prisma code, the process bootstrap and the test harness are excluded, so the numbers describe application code. The web floors sit close to the current totals while the remaining pages gain component coverage; they ratchet upward as tests are added.
@@ -426,7 +435,7 @@ It covers registration and login for all roles, check-ins, vitals, medication sc
 Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml) on GitHub Actions:
 
 - Node.js 24 from `.nvmrc`, with npm dependency caching;
-- a PostgreSQL 17 service container, a dedicated `seniorcare_test` schema and `prisma migrate deploy`;
+- a PostgreSQL 17 and Redis 7 service container pair — PostgreSQL holds the isolated `seniorcare_test` schema, migrations are applied with `prisma migrate deploy`, and Redis exercises the distributed rate-limit store;
 - Prisma client generation, typecheck, ESLint, the production build and both Vitest suites with V8 coverage — against a throwaway database with no repository secrets;
 - a job summary with the coverage totals and a `coverage-reports` artifact containing the JSON, LCOV and HTML reports.
 
@@ -441,6 +450,7 @@ Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.g
 - **Health probes** are suitable for Kubernetes/ECS readiness and liveness checks.
 - **Graceful shutdown** is safe for rolling deploys and autoscaling.
 - **SMTP is optional in development** — with `MAIL_ENABLED=false` messages are logged instead of sent, so local work needs no mail server.
+- **Redis is optional.** Without `REDIS_URL` rate-limit counters live in process memory; with it they are shared across instances. The connection is lazy, so Redis being down cannot prevent the API from booting, and a failed command falls back to the local store.
 
 ---
 
