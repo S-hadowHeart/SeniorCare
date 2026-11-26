@@ -2,6 +2,7 @@ import rateLimit, { ipKeyGenerator, type Options } from "express-rate-limit";
 import type { Request, Response } from "express";
 import { env } from "../config/env.js";
 import { childLogger } from "../lib/logger.js";
+import { getRateLimitStore } from "../lib/rate-limit-store.js";
 
 const log = childLogger("rate-limit");
 
@@ -57,6 +58,7 @@ export const globalLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
   limit: env.RATE_LIMIT_MAX,
   keyGenerator,
+  store: getRateLimitStore("global"),
   handler: buildHandler("global"),
 });
 
@@ -66,6 +68,7 @@ export const authLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
   limit: env.AUTH_RATE_LIMIT_MAX,
   skipSuccessfulRequests: true,
+  store: getRateLimitStore("auth"),
   handler: buildHandler("auth"),
 });
 
@@ -79,6 +82,7 @@ export const sosLimiter = rateLimit({
   windowMs: 60_000,
   limit: env.SOS_RATE_LIMIT_MAX,
   keyGenerator,
+  store: getRateLimitStore("sos"),
   handler: buildHandler("sos"),
 });
 
@@ -88,5 +92,6 @@ export const notificationLimiter = rateLimit({
   windowMs: 60_000,
   limit: 10,
   keyGenerator,
+  store: getRateLimitStore("notification"),
   handler: buildHandler("notification"),
 });

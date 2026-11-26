@@ -3,6 +3,7 @@ import { env } from "./config/env.js";
 import { createApp } from "./app.js";
 import { logger, childLogger } from "./lib/logger.js";
 import { prisma } from "./lib/prisma.js";
+import { closeRateLimitStore } from "./lib/rate-limit-store.js";
 import { sseHub } from "./realtime/sse.js";
 import { startJobs } from "./jobs/scheduler.js";
 import { verifyMailTransport } from "./notifications/mailer.js";
@@ -74,7 +75,10 @@ async function main(): Promise<void> {
       socket.destroy();
     }
 
-    // 4. Release the database pool.
+    // 4. Release the rate-limit store (Redis connection, if configured).
+    await closeRateLimitStore();
+
+    // 5. Release the database pool.
     await prisma.$disconnect();
 
     clearTimeout(forceExit);

@@ -37,11 +37,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      # Exercises the optional distributed rate-limit store. The API itself
+      # uses the memory store during tests; the store test talks to this.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
 
     env:
       DATABASE_URL: postgresql://seniorcare:seniorcare@127.0.0.1:5432/seniorcare_test?schema=seniorcare_test
       DIRECT_DATABASE_URL: postgresql://seniorcare:seniorcare@127.0.0.1:5432/seniorcare_test?schema=seniorcare_test
       TEST_DATABASE_URL: postgresql://seniorcare:seniorcare@127.0.0.1:5432/seniorcare_test?schema=seniorcare_test
+      REDIS_URL: redis://127.0.0.1:6379/0
       PGPASSWORD: seniorcare
 
     steps:

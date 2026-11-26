@@ -70,6 +70,12 @@ const envSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
   SOS_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(20),
+  // Optional shared store for multi-instance deployments. Empty means the
+  // process-local memory store (single instance, development and tests).
+  REDIS_URL: z.preprocess(
+    (value) => (value === undefined || value === "" ? undefined : value),
+    z.string().url().optional(),
+  ),
 
   MAIL_ENABLED: booleanish.default(false),
   SMTP_HOST: z.string().default(""),
