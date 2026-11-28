@@ -4,6 +4,12 @@ import { asyncHandler } from "../../lib/asyncHandler.js";
 import { created, ok } from "../../lib/http.js";
 import { UnauthorizedError } from "../../lib/errors.js";
 import { authenticate } from "../../middleware/authenticate.js";
+import {
+  assertCsrf,
+  clearCsrfCookie,
+  issueCsrfToken,
+  setCsrfCookie,
+} from "../../middleware/csrf.js";
 import { authLimiter } from "../../middleware/rateLimit.js";
 import { validate, validatedBody } from "../../middleware/validate.js";
 import {
@@ -37,7 +43,7 @@ function sessionContext(req: Request): { ipAddress?: string; userAgent?: string 
   };
 }
 
-function setRefreshCookie(res: Response, refreshToken: string, expiresAt: Date): void {
+function setSessionCookies(res: Response, refreshToken: string, expiresAt: Date): void {
   res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
     httpOnly: true,
     secure: env.isProduction,
@@ -45,15 +51,19 @@ function setRefreshCookie(res: Response, refreshToken: string, expiresAt: Date):
     path: REFRESH_COOKIE_PATH,
     expires: expiresAt,
   });
+  // A fresh CSRF token is issued with every new session and rotated with every
+  // refresh, so a token from an old session cannot be replayed.
+  setCsrfCookie(res, issueCsrfToken(), expiresAt);
 }
 
-function clearRefreshCookie(res: Response): void {
+function clearSessionCookies(res: Response): void {
   res.clearCookie(REFRESH_COOKIE_NAME, {
     httpOnly: true,
     secure: env.isProduction,
     sameSite: "strict",
     path: REFRESH_COOKIE_PATH,
   });
+  clearCsrfCookie(res);
 }
 
 /** POST /api/v1/auth/register — create an account. */
@@ -65,7 +75,7 @@ authRouter.post(
     const input = validatedBody<RegisterInput>(req);
     const result = await register(input, sessionContext(req));
 
-    setRefreshCookie(res, result.tokens.refreshToken, result.tokens.refreshTokenExpiresAt);
+    setSessionCookies(res, result.tokens.refreshToken, result.tokens.refreshTokenExpiresAt);
 
     await writeAuditLog({
       actorId: result.id,
@@ -100,7 +110,7 @@ authRouter.post(
     const input = validatedBody<LoginInput>(req);
     const result = await login(input, sessionContext(req));
 
-    setRefreshCookie(res, result.tokens.refreshToken, result.tokens.refreshTokenExpiresAt);
+    setSessionCookies(res, result.tokens.refreshToken, result.tokens.refreshTokenExpiresAt);
 
     await writeAuditLog({
       actorId: result.id,
@@ -129,8 +139,9 @@ authRouter.post(
 /**
  * POST /api/v1/auth/refresh — rotate the refresh token.
  *
- * The refresh token lives in an httpOnly, SameSite=Strict cookie, so this
- * endpoint cannot be triggered cross-site.
+ * The refresh token lives in an httpOnly, SameSite=Strict cookie. The
+ * double-submit CSRF check is a second, independent barrier: the request must
+ * also echo the `sc_csrf` cookie in `X-CSRF-Token`.
  */
 authRouter.post(
   "/refresh",
@@ -142,9 +153,11 @@ authRouter.post(
       throw new UnauthorizedError("No active session.", "no_refresh_token");
     }
 
+    assertCsrf(req);
+
     const result = await rotateRefreshToken(rawToken, sessionContext(req));
 
-    setRefreshCookie(res, result.refreshToken, result.refreshTokenExpiresAt);
+    setSessionCookies(res, result.refreshToken, result.refreshTokenExpiresAt);
 
     ok(res, {
       user: result.user,
@@ -160,9 +173,12 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const rawToken = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
     if (rawToken) {
+      // A cross-site logout is only a nuisance, but it is still a state
+      // change, so it gets the same token check as refresh.
+      assertCsrf(req);
       await revokeRefreshToken(rawToken);
     }
-    clearRefreshCookie(res);
+    clearSessionCookies(res);
     ok(res, { message: "Signed out." });
   }),
 );
@@ -173,7 +189,7 @@ authRouter.post(
   authenticate,
   asyncHandler(async (req, res) => {
     const revoked = await revokeAllSessions(req.auth!.userId, "signed_out_everywhere");
-    clearRefreshCookie(res);
+    clearSessionCookies(res);
     ok(res, { revokedSessions: revoked });
   }),
 );
@@ -196,7 +212,7 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const input = validatedBody<ChangePasswordInput>(req);
     await changePassword(req.auth!.userId, input, sessionContext(req));
-    clearRefreshCookie(res);
+    clearSessionCookies(res);
     ok(res, { message: "Password updated. Please sign in again." });
   }),
 );

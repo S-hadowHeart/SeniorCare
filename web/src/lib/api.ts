@@ -8,11 +8,33 @@
  * * Performs the refresh-token dance automatically: a `401` triggers a
  *   single-flight refresh (concurrent 401s share one refresh call) and the
  *   original request is replayed once.
+ * * Echoes the double-submit CSRF cookie in `X-CSRF-Token` on state-changing
+ *   requests, so the cookie-authenticated auth endpoints cannot be driven by
+ *   a cross-site form post.
  * * Normalises every error into an `ApiError` carrying the RFC 9457 problem
  *   details returned by the server, so the UI can show field-level messages.
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+const CSRF_COOKIE_NAME = "sc_csrf";
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+
+  const prefix = `${name}=`;
+  for (const part of document.cookie.split(";")) {
+    const entry = part.trim();
+    if (entry.startsWith(prefix)) {
+      return decodeURIComponent(entry.slice(prefix.length));
+    }
+  }
+  return null;
+}
+
+function csrfHeaders(): Record<string, string> {
+  const token = readCookie(CSRF_COOKIE_NAME);
+  return token ? { "X-CSRF-Token": token } : {};
+}
 
 export interface ProblemDetails {
   type?: string;
@@ -84,7 +106,7 @@ async function refreshAccessToken(): Promise<string | null> {
         const response = await fetch(`${API_BASE}/auth/refresh`, {
           method: "POST",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...csrfHeaders() },
         });
 
         if (!response.ok) {
@@ -135,6 +157,12 @@ async function request<T>(
 
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  // GET/HEAD are safe methods; everything else gets the CSRF token. Sending
+  // it on every mutating request keeps the client simple and future-proofs
+  // any new cookie-authenticated endpoint.
+  if (method !== "GET" && method !== "HEAD") {
+    Object.assign(headers, csrfHeaders());
+  }
 
   const response = await fetch(`${API_BASE}${path}`, {
     method,

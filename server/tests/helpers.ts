@@ -108,6 +108,31 @@ export function refreshCookieFrom(response: request.Response): string {
   return cookie.split(";")[0]!;
 }
 
+/** The non-HttpOnly double-submit cookie, as a `Cookie` header fragment. */
+export function csrfCookieFrom(response: request.Response): string {
+  const header = response.headers["set-cookie"] as unknown;
+  const cookies = Array.isArray(header) ? (header as string[]) : header ? [String(header)] : [];
+  const cookie = cookies.find((value) => value.startsWith("sc_csrf="));
+  if (!cookie) {
+    throw new Error("Expected a sc_csrf cookie on the response.");
+  }
+  return cookie.split(";")[0]!;
+}
+
+export function csrfTokenFrom(response: request.Response): string {
+  return csrfCookieFrom(response).slice("sc_csrf=".length);
+}
+
+/** The header the SPA echoes back for a cookie-authenticated request. */
+export function csrfHeader(response: request.Response): { "X-CSRF-Token": string } {
+  return { "X-CSRF-Token": csrfTokenFrom(response) };
+}
+
+/** Both cookies for a request that does not use a persistent agent. */
+export function sessionCookies(response: request.Response): string {
+  return `${refreshCookieFrom(response)}; ${csrfCookieFrom(response)}`;
+}
+
 export function accessTokenFrom(response: request.Response): string {
   const token = (response.body as { data?: { accessToken?: string } }).data?.accessToken;
   if (!token) {

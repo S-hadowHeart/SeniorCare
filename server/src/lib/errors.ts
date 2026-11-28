@@ -71,8 +71,11 @@ export class UnauthorizedError extends AppError {
 
 /** 403 — authenticated but not allowed to perform the action. */
 export class ForbiddenError extends AppError {
-  constructor(message = "You do not have permission to perform this action.") {
-    super(message, 403, "forbidden");
+  constructor(
+    message = "You do not have permission to perform this action.",
+    code = "forbidden",
+  ) {
+    super(message, 403, code);
   }
 }
 

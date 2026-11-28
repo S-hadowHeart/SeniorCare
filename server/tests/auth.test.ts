@@ -6,10 +6,13 @@ import {
   accessTokenFrom,
   buildApp,
   closeDatabase,
+  csrfHeader,
+  csrfTokenFrom,
   loginUser,
   refreshCookieFrom,
   registerUser,
   resetDatabase,
+  sessionCookies,
 } from "./helpers.js";
 import { prisma } from "../src/lib/prisma.js";
 
@@ -50,6 +53,18 @@ describe("POST /auth/register", () => {
 
     // The raw token must never be exposed in the JSON body.
     expect(JSON.stringify(response.body)).not.toContain(refreshCookieFrom(response));
+  });
+
+  it("issues a JavaScript-readable double-submit CSRF cookie", async () => {
+    const { response } = await registerUser(app);
+    const header = response.headers["set-cookie"] as unknown as string[];
+    const setCookie = header.find((value) => value.startsWith("sc_csrf="));
+
+    expect(setCookie).toBeDefined();
+    expect(setCookie).not.toMatch(/HttpOnly/i);
+    expect(setCookie).toMatch(/SameSite=Strict/i);
+    expect(setCookie).toMatch(/Path=\//i);
+    expect(csrfTokenFrom(response)).toEqual(expect.any(String));
   });
 
   it("does not create an elder profile for a caregiver", async () => {
@@ -146,25 +161,32 @@ describe("POST /auth/refresh", () => {
   it("rotates the refresh token and returns a new access token", async () => {
     const { agent, response } = await registerUser(app);
     const original = refreshCookieFrom(response);
+    const originalCsrf = csrfTokenFrom(response);
 
-    const refreshed = await agent.post(`${API}/auth/refresh`).send({});
+    const refreshed = await agent
+      .post(`${API}/auth/refresh`)
+      .set(csrfHeader(response))
+      .send({});
 
     expect(refreshed.status).toBe(200);
     expect(refreshed.body.data.accessToken).toEqual(expect.any(String));
     const rotated = refreshCookieFrom(refreshed);
     expect(rotated).not.toBe(original);
+    expect(csrfTokenFrom(refreshed)).not.toBe(originalCsrf);
   });
 
   it("revokes the token family when a rotated token is replayed", async () => {
     const { agent, response } = await registerUser(app);
-    const original = refreshCookieFrom(response);
 
-    const refreshed = await agent.post(`${API}/auth/refresh`).send({});
-    const rotated = refreshCookieFrom(refreshed);
+    const refreshed = await agent
+      .post(`${API}/auth/refresh`)
+      .set(csrfHeader(response))
+      .send({});
 
     const replay = await request(app)
       .post(`${API}/auth/refresh`)
-      .set("Cookie", original)
+      .set("Cookie", sessionCookies(response))
+      .set(csrfHeader(response))
       .send({});
 
     expect(replay.status).toBe(401);
@@ -173,10 +195,42 @@ describe("POST /auth/refresh", () => {
     // The legitimate, newly-issued token is revoked as part of the family.
     const afterReplay = await request(app)
       .post(`${API}/auth/refresh`)
-      .set("Cookie", rotated)
+      .set("Cookie", sessionCookies(refreshed))
+      .set(csrfHeader(refreshed))
       .send({});
 
     expect(afterReplay.status).toBe(401);
+  });
+
+  it("rejects a refresh without the CSRF header and does not consume the token", async () => {
+    const { agent, response } = await registerUser(app);
+
+    const withoutCsrf = await request(app)
+      .post(`${API}/auth/refresh`)
+      .set("Cookie", sessionCookies(response))
+      .send({});
+
+    expect(withoutCsrf.status).toBe(403);
+    expect(withoutCsrf.body.code).toBe("csrf_token_invalid");
+
+    const stillValid = await agent
+      .post(`${API}/auth/refresh`)
+      .set(csrfHeader(response))
+      .send({});
+    expect(stillValid.status).toBe(200);
+  });
+
+  it("rejects a refresh whose CSRF header does not match the cookie", async () => {
+    const { response } = await registerUser(app);
+
+    const mismatch = await request(app)
+      .post(`${API}/auth/refresh`)
+      .set("Cookie", sessionCookies(response))
+      .set("X-CSRF-Token", "not-the-cookie-token")
+      .send({});
+
+    expect(mismatch.status).toBe(403);
+    expect(mismatch.body.code).toBe("csrf_token_invalid");
   });
 
   it("rejects a request that carries no refresh cookie", async () => {
@@ -228,17 +282,32 @@ describe("GET /auth/me", () => {
 describe("POST /auth/logout", () => {
   it("revokes the current refresh token", async () => {
     const { agent, response } = await registerUser(app);
-    const cookie = refreshCookieFrom(response);
 
-    const logout = await agent.post(`${API}/auth/logout`).send({});
+    const logout = await agent
+      .post(`${API}/auth/logout`)
+      .set(csrfHeader(response))
+      .send({});
     expect(logout.status).toBe(200);
 
     const reuse = await request(app)
       .post(`${API}/auth/refresh`)
-      .set("Cookie", cookie)
+      .set("Cookie", sessionCookies(response))
+      .set(csrfHeader(response))
       .send({});
 
     expect(reuse.status).toBe(401);
+  });
+
+  it("requires the CSRF token before revoking the session", async () => {
+    const { response } = await registerUser(app);
+
+    const logout = await request(app)
+      .post(`${API}/auth/logout`)
+      .set("Cookie", sessionCookies(response))
+      .send({});
+
+    expect(logout.status).toBe(403);
+    expect(logout.body.code).toBe("csrf_token_invalid");
   });
 });
 
@@ -246,7 +315,6 @@ describe("POST /auth/change-password", () => {
   it("updates the password, revokes sessions and rejects the old credentials", async () => {
     const { response } = await registerUser(app);
     const token = accessTokenFrom(response);
-    const oldRefresh = refreshCookieFrom(response);
 
     const changed = await request(app)
       .post(`${API}/auth/change-password`)
@@ -257,7 +325,8 @@ describe("POST /auth/change-password", () => {
 
     const revokedSession = await request(app)
       .post(`${API}/auth/refresh`)
-      .set("Cookie", oldRefresh)
+      .set("Cookie", sessionCookies(response))
+      .set(csrfHeader(response))
       .send({});
     expect(revokedSession.status).toBe(401);
 
