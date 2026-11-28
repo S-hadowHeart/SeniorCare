@@ -125,6 +125,7 @@ Security is treated as a set of enforced defaults rather than a checklist. The c
 - **Short-lived HS256 access tokens** (15 minutes by default) with issuer, audience and `jti` claims, and algorithm pinning during verification (`server/src/lib/jwt.ts`).
 - **Opaque, rotating refresh tokens.** The refresh credential is a 256-bit random value whose **SHA-256 hash** is the only thing stored. It is delivered in an `httpOnly`, `SameSite=Strict`, path-scoped cookie that is marked `Secure` in production (`server/src/modules/auth/auth.routes.ts`).
 - **Refresh-token reuse detection.** Refresh tokens are single-use and grouped into families. Presenting an already-rotated token is treated as theft: the entire family is revoked and the user must sign in again (`rotateRefreshToken` in `auth.service.ts`).
+- **Double-submit CSRF tokens.** Refresh and logout require `X-CSRF-Token` to match the random `sc_csrf` cookie in constant time. The cookie is `SameSite=Strict`, readable by the SPA, and rotated on every refresh; `SameSite=Strict` remains the first layer, not the only one (`server/src/middleware/csrf.ts`).
 - **Account lockout** after a configurable number of failed attempts, with a timed lock, and **uniform response timing** for unknown accounts via a dummy Argon2 verification, which closes the user-enumeration side channel.
 - **Generic authentication errors.** Expired, forged and wrong-audience tokens all return the same problem document, so an attacker learns nothing from the failure mode.
 - **Password change invalidates every session** and emits a security notification.
@@ -165,7 +166,7 @@ Security is treated as a set of enforced defaults rather than a checklist. The c
 | Access-token theft | 15-minute TTL, issuer/audience pinning, algorithm allow-list |
 | Refresh-token theft | Hash-at-rest, single use, rotation, family-wide revocation on replay |
 | XSS-driven token theft | Refresh token in an `httpOnly` cookie, no token in `localStorage` |
-| CSRF | `SameSite=Strict`, path-scoped cookie, explicit CORS allow-list |
+| CSRF | `SameSite=Strict` cookies, double-submit token on refresh/logout, explicit CORS allow-list |
 | Horizontal privilege escalation | Single elder-access gateway, capability-scoped care links |
 | Data-at-rest exposure | AES-256-GCM encryption of clinical free text |
 | Injection | Parameterised Prisma queries, Zod-validated inputs, no dynamic SQL |
@@ -203,7 +204,7 @@ Migrations are versioned under `server/prisma/migrations/` and applied with `pri
 
 ## API surface
 
-All routes are prefixed with `/api/v1`. Authentication uses `Authorization: Bearer <access-token>`; the refresh token travels only in its cookie.
+All routes are prefixed with `/api/v1`. Authentication uses `Authorization: Bearer <access-token>`; the refresh token travels only in its cookie. The cookie-authenticated `POST /auth/refresh` and `POST /auth/logout` endpoints also require `X-CSRF-Token` to match the `sc_csrf` cookie.
 
 | Group | Representative endpoints |
 | --- | --- |
@@ -311,7 +312,7 @@ npm run test --workspace server
 npm run test --workspace web   # no database required
 ```
 
-`npm test` at the repository root runs both. Together the suites contain **184 tests across thirteen files**.
+`npm test` at the repository root runs both. Together the suites contain **191 tests across fourteen files**.
 
 On the first run, apply the migrations to that database (create the schema first if you are using one):
 
@@ -321,12 +322,13 @@ DATABASE_URL="$TEST_DATABASE_URL" DIRECT_DATABASE_URL="$TEST_DATABASE_URL" npx p
 cd ..
 ```
 
-`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The server suites currently contain **157 tests** across ten files. A dedicated isolation test asserts that the live connection's `current_schema()` is the schema named in that URL, so a client that ignores the parameter fails loudly instead of truncating `public`.
+`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The server suites currently contain **161 tests** across ten files. A dedicated isolation test asserts that the live connection's `current_schema()` is the schema named in that URL, so a client that ignores the parameter fails loudly instead of truncating `public`.
 
-**Authentication (20 tests)**
+**Authentication (24 tests)**
 
 - account creation for seniors and caregivers, including the elder profile;
-- refresh-cookie hardening (`HttpOnly`, `SameSite=Strict`, path scope) and the guarantee that the token never appears in a JSON body;
+- refresh-cookie hardening (`HttpOnly`, `SameSite=Strict`, path scope), the readable `SameSite=Strict` CSRF cookie, and the guarantee that the refresh token never appears in a JSON body;
+- double-submit CSRF enforcement on refresh and logout, including a rejected request that does not consume the refresh token;
 - case-insensitive login and duplicate-address rejection;
 - identical error responses for unknown accounts and wrong passwords;
 - account lockout after the configured number of failures, including lockout of the correct password;
@@ -384,7 +386,12 @@ cd ..
 
 ### Web component tests
 
-**27 tests across three files**, run in jsdom with Testing Library.
+**30 tests across four files**, run in jsdom with Testing Library.
+
+**HTTP client (3 tests)**
+
+- the CSRF cookie is echoed in `X-CSRF-Token` on mutating requests and on the single-flight refresh call;
+- safe GET requests omit the header, avoiding an unnecessary CORS preflight.
 
 **Authentication state (7 tests)**
 
