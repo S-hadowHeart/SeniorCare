@@ -107,7 +107,7 @@ flowchart LR
 | Validation | **Zod 4** | One schema per boundary — environment variables, request bodies, query params. |
 | Auth | **`jose` (JWT) + `@node-rs/argon2`** | Stateless short-lived access tokens; memory-hard password hashing. |
 | Realtime | **Server-Sent Events** | One-way push with automatic reconnect, no extra protocol or sticky-session state. |
-| Jobs | **`node-cron`** | Check-in watchdog and medication reminders. |
+| Jobs | **`node-cron`** | Check-in watchdog, medication reminders and daily session/audit retention. |
 | Rate limiting | **`express-rate-limit` + optional Redis** | Shared counters across instances; per-process fallback when the store is unavailable. |
 | Web | **React 19 · Vite · Tailwind CSS v4** | Fast iteration, modern concurrency, utility-first styling. |
 | Data fetching | **TanStack Query · react-hook-form + Zod** | Cache-aware server state and schema-validated forms. |
@@ -156,6 +156,7 @@ Security is treated as a set of enforced defaults rather than a checklist. The c
 - **Structured logging** with `pino`, with request bodies and credentials never logged.
 - **RFC 9457 problem documents** for every error, including a stable machine-readable `code`, so clients can branch on reason without parsing prose.
 - **Append-only audit log** for authentication and care-network events.
+- **Bounded retention.** A guarded daily job removes refresh tokens that expired or were revoked more than `SESSION_RETENTION_DAYS` (30) ago, and audit rows older than `AUDIT_RETENTION_DAYS` (365). The grace period keeps replay evidence available for investigation without letting either table grow without bound.
 
 #### Threat model at a glance
 
@@ -312,7 +313,7 @@ npm run test --workspace server
 npm run test --workspace web   # no database required
 ```
 
-`npm test` at the repository root runs both. Together the suites contain **191 tests across fourteen files**.
+`npm test` at the repository root runs both. Together the suites contain **193 tests across fifteen files**.
 
 On the first run, apply the migrations to that database (create the schema first if you are using one):
 
@@ -322,7 +323,7 @@ DATABASE_URL="$TEST_DATABASE_URL" DIRECT_DATABASE_URL="$TEST_DATABASE_URL" npx p
 cd ..
 ```
 
-`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The server suites currently contain **161 tests** across ten files. A dedicated isolation test asserts that the live connection's `current_schema()` is the schema named in that URL, so a client that ignores the parameter fails loudly instead of truncating `public`.
+`TEST_DATABASE_URL` is deliberately mandatory and has no fallback to `DATABASE_URL`, so a misconfigured run cannot destroy development data. The server suites currently contain **163 tests** across eleven files. A dedicated isolation test asserts that the live connection's `current_schema()` is the schema named in that URL, so a client that ignores the parameter fails loudly instead of truncating `public`.
 
 **Authentication (24 tests)**
 
@@ -383,6 +384,11 @@ cd ..
 - increment, decrement, key reset and full reset fall back to a process-local memory store when Redis throws, so a cache outage degrades instead of failing requests;
 - the first command connects lazily, a failed connection is retried at most every 30 seconds, and `init`/`shutdown` are delegated to both stores;
 - test runs use the memory store, so the API suites never depend on a running Redis.
+
+**Session hygiene (2 tests)**
+
+- only sessions expired or revoked beyond the retention window are deleted, while active and recently revoked sessions are kept;
+- the daily job is idempotent and a no-op on an empty database.
 
 ### Web component tests
 

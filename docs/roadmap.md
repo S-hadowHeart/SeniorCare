@@ -34,7 +34,7 @@ shutdown and an end-to-end smoke suite.
 | --- | --- | --- |
 | 8 ✅ | Distributed rate-limit store | Optional Redis store so limits hold across instances; in-memory fallback for single-node and tests. |
 | 9 ✅ | CSRF defence in depth | Double-submit token for state-changing cookie flows, alongside the existing `SameSite=Strict` policy. |
-| 10 | Session hygiene job | Scheduled cleanup of expired/revoked refresh tokens and stale audit rows. |
+| 10 ✅ | Session hygiene job | Scheduled cleanup of expired/revoked refresh tokens and stale audit rows. |
 | 11 | Structured audit coverage | Audit entries for every care-link, medication and SOS state change, with a query helper. |
 | 12 | Metrics endpoint | Prometheus counters/histograms for request latency, error rate, SSE connections and job outcomes. |
 | 13 | Alerting runbook | Documented SLOs and alert thresholds for SOS latency, job failures and database saturation. |
@@ -87,6 +87,7 @@ A task is complete only when:
 - **2026-11-25** - Coverage and branch protection completed. Both Vitest suites now run under V8 coverage with global floors just below the measured totals (API: 65.0% statements / 56.6% branches / 55.6% functions / 66.1% lines; web: 21.6 / 13.7 / 17.9 / 22.5). Reports are written as text, `json-summary`, LCOV and HTML, published in the CI job summary and uploaded as the `coverage-reports` artifact. `main` now requires the strict **Build and test** check, one approving review with stale-review dismissal, linear history and resolved conversations; force pushes and deletions are blocked. Also bumped `typescript-eslint` 8.72.2 → 8.74.0, clearing seven moderate advisories; the three remaining high findings are Prisma's build-time `effect` dependency, whose only offered fix is a major downgrade to Prisma 6.
 - **2026-11-26** - Optional distributed rate-limit store added. `REDIS_URL` switches every limiter (global, auth, SOS and notifications) to a Redis-backed store; without it the process-local memory store is used. A resilient wrapper falls back to memory on any Redis failure and logs at most once a minute, the connection is lazy with a 30-second retry cooldown, and the client is closed during graceful shutdown. Added 10 tests, including a Redis integration test that CI runs against a Redis 7 service; the API suites still use memory so they never depend on Redis.
 - **2026-11-28** - Double-submit CSRF defence added for the cookie-authenticated refresh and logout endpoints. A random `sc_csrf` cookie (`SameSite=Strict`, path `/`, not `HttpOnly`) is issued with each session and rotated on refresh; the SPA echoes it in `X-CSRF-Token` and the server compares in constant time. Missing or mismatched tokens return `403` before the refresh token is consumed. Added four API tests and three HTTP-client tests.
+- **2026-11-28** - Daily session-hygiene job added at 03:17 UTC. It deletes refresh tokens that expired or were revoked more than `SESSION_RETENTION_DAYS` (30) ago and audit rows older than `AUDIT_RETENTION_DAYS` (365), preserving replay evidence for investigation. The job is guarded against overlap, idempotent, and covered by two integration tests.
 
 ## Guiding principles
 
