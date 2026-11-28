@@ -5,7 +5,7 @@ import { getElderAccess } from "../../lib/access.js";
 import { prisma } from "../../lib/prisma.js";
 import { authenticate } from "../../middleware/authenticate.js";
 import { validate, validatedBody, validatedParams } from "../../middleware/validate.js";
-import { writeAuditLog } from "../auth/auth.service.js";
+import { writeAuditLog } from "../audit/audit.service.js";
 import {
   contactIdParamSchema,
   createContactSchema,

@@ -11,6 +11,7 @@ import { uuidSchema } from "../../lib/validation.js";
 import { expandDoses } from "../../lib/schedule.js";
 import { startOfLocalDay } from "../../lib/time.js";
 import { realtimeBus } from "../../realtime/bus.js";
+import { writeAuditLog } from "../audit/audit.service.js";
 import {
   createMedicationSchema,
   elderIdParamSchema,
@@ -107,6 +108,15 @@ medicationsRouter.post(
       elderId: elder.id,
       elderName: elder.displayName,
       medicationId: medication.id,
+    });
+
+    await writeAuditLog({
+      actorId: req.auth!.userId,
+      action: "medication.created",
+      entity: "Medication",
+      entityId: medication.id,
+      ipAddress: req.ip,
+      metadata: { elderId: elder.id, name: medication.name },
     });
 
     created(res, { ...medication, instructions: decryptNullable(medication.instructions) });
@@ -258,6 +268,20 @@ medicationsRouter.post(
       status: log.status,
     });
 
+    await writeAuditLog({
+      actorId: req.auth!.userId,
+      action: "medication.dose_recorded",
+      entity: "MedicationLog",
+      entityId: log.id,
+      ipAddress: req.ip,
+      metadata: {
+        elderId: elder.id,
+        medicationId: medication.id,
+        scheduledFor: scheduledFor.toISOString(),
+        status: log.status,
+      },
+    });
+
     ok(res, log);
   }),
 );
@@ -315,6 +339,15 @@ medicationItemRouter.patch(
       medicationId: updated.id,
     });
 
+    await writeAuditLog({
+      actorId: req.auth!.userId,
+      action: "medication.updated",
+      entity: "Medication",
+      entityId: updated.id,
+      ipAddress: req.ip,
+      metadata: { elderId: elder.id, changed: Object.keys(input) },
+    });
+
     ok(res, { ...updated, instructions: decryptNullable(updated.instructions) });
   }),
 );
@@ -349,6 +382,15 @@ medicationItemRouter.delete(
       where: { id },
       data: { active: false },
       select: MEDICATION_SELECT,
+    });
+
+    await writeAuditLog({
+      actorId: req.auth!.userId,
+      action: "medication.stopped",
+      entity: "Medication",
+      entityId: updated.id,
+      ipAddress: req.ip,
+      metadata: { elderId: existing.elderId },
     });
 
     ok(res, updated);

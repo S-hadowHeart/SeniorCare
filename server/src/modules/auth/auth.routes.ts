@@ -20,6 +20,7 @@ import {
   type LoginInput,
   type RegisterInput,
 } from "./auth.schemas.js";
+import { writeAuditLog } from "../audit/audit.service.js";
 import {
   REFRESH_COOKIE_NAME,
   changePassword,
@@ -29,7 +30,6 @@ import {
   revokeAllSessions,
   revokeRefreshToken,
   rotateRefreshToken,
-  writeAuditLog,
 } from "./auth.service.js";
 
 export const authRouter = Router();

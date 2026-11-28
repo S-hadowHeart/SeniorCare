@@ -9,7 +9,7 @@ import { authenticate } from "../../middleware/authenticate.js";
 import { validate, validatedBody, validatedParams } from "../../middleware/validate.js";
 import { realtimeBus } from "../../realtime/bus.js";
 import { notify } from "../../notifications/service.js";
-import { writeAuditLog } from "../auth/auth.service.js";
+import { writeAuditLog } from "../audit/audit.service.js";
 import {
   elderIdParamSchema,
   inviteCaregiverSchema,
@@ -222,6 +222,15 @@ careLinkItemRouter.patch(
         select: LINK_SELECT,
       });
 
+      await writeAuditLog({
+        actorId,
+        action: "careLink.accepted",
+        entity: "CareLink",
+        entityId: id,
+        ipAddress: req.ip,
+        metadata: { elderId: link.elderId, caregiverId: invitedUser.id },
+      });
+
       await notify({
         userId: invitedUser.id,
         type: "CARE_LINK_INVITED",
@@ -257,6 +266,19 @@ careLinkItemRouter.patch(
         select: LINK_SELECT,
       });
 
+      await writeAuditLog({
+        actorId,
+        action: "careLink.revoked",
+        entity: "CareLink",
+        entityId: id,
+        ipAddress: req.ip,
+        metadata: {
+          elderId: revoked.elderId,
+          caregiverId: revoked.caregiverId,
+          selfRevoked: true,
+        },
+      });
+
       realtimeBus.publish("link.updated", {
         elderId: revoked.elderId,
         caregiverId: revoked.caregiverId,
@@ -279,6 +301,20 @@ careLinkItemRouter.patch(
         isPrimary: input.isPrimary ?? undefined,
       },
       select: LINK_SELECT,
+    });
+
+    await writeAuditLog({
+      actorId,
+      action: updated.status === "REVOKED" ? "careLink.revoked" : "careLink.updated",
+      entity: "CareLink",
+      entityId: id,
+      ipAddress: req.ip,
+      metadata: {
+        elderId: updated.elderId,
+        caregiverId: updated.caregiverId,
+        status: updated.status,
+        changed: Object.keys(input),
+      },
     });
 
     realtimeBus.publish("link.updated", {

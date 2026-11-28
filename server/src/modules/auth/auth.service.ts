@@ -375,29 +375,4 @@ export async function getProfile(userId: string): Promise<AuthenticatedUser> {
   };
 }
 
-/** Write an audit trail entry. */
-export async function writeAuditLog(entry: {
-  actorId?: string | null;
-  action: string;
-  entity: string;
-  entityId?: string | null;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-  metadata?: Record<string, unknown>;
-}): Promise<void> {
-  try {
-    await prisma.auditLog.create({
-      data: {
-        actorId: entry.actorId ?? null,
-        action: entry.action,
-        entity: entry.entity,
-        entityId: entry.entityId ?? null,
-        ipAddress: entry.ipAddress?.slice(0, 64) ?? null,
-        userAgent: entry.userAgent?.slice(0, 300) ?? null,
-        metadata: entry.metadata as never,
-      },
-    });
-  } catch (error) {
-    log.error({ err: error, action: entry.action }, "failed to write audit log");
-  }
-}
+

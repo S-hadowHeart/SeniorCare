@@ -11,7 +11,7 @@ import { realtimeBus } from "../../realtime/bus.js";
 import { notify, resolveElderRecipients } from "../../notifications/service.js";
 import { sendMail } from "../../notifications/mailer.js";
 import { sosAlertEmail } from "../../notifications/templates.js";
-import { writeAuditLog } from "../auth/auth.service.js";
+import { writeAuditLog } from "../audit/audit.service.js";
 import {
   elderIdParamSchema,
   resolveSosSchema,
@@ -272,6 +272,15 @@ sosItemRouter.post(
       },
     });
 
+    await writeAuditLog({
+      actorId: req.auth!.userId,
+      action: "sos.acknowledged",
+      entity: "SosAlert",
+      entityId: alert.id,
+      ipAddress: req.ip,
+      metadata: { elderId: elder.id, previousStatus: alert.status },
+    });
+
     await notify({
       userId: elder.userId,
       type: "SOS_ACKNOWLEDGED",
@@ -315,6 +324,19 @@ sosItemRouter.post(
         resolvedAt: new Date(),
         resolvedById: req.auth!.userId,
         resolutionNote: input.note ?? null,
+      },
+    });
+
+    await writeAuditLog({
+      actorId: req.auth!.userId,
+      action: "sos.resolved",
+      entity: "SosAlert",
+      entityId: alert.id,
+      ipAddress: req.ip,
+      metadata: {
+        elderId: elder.id,
+        previousStatus: alert.status,
+        hasNote: Boolean(input.note),
       },
     });
 
@@ -374,6 +396,15 @@ sosItemRouter.post(
     const updated = await prisma.sosAlert.update({
       where: { id },
       data: { status: "CANCELLED", cancelledAt: new Date() },
+    });
+
+    await writeAuditLog({
+      actorId: req.auth!.userId,
+      action: "sos.cancelled",
+      entity: "SosAlert",
+      entityId: alert.id,
+      ipAddress: req.ip,
+      metadata: { elderId: elder.id, ageMinutes: Math.round(ageMinutes) },
     });
 
     realtimeBus.publish("sos.updated", {
