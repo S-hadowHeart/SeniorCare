@@ -90,6 +90,10 @@ const envSchema = z.object({
   CHECKIN_MORNING_HOUR: z.coerce.number().int().min(0).max(23).default(9),
   MEDICATION_REMINDER_LEAD_MINUTES: z.coerce.number().int().min(0).max(720).default(15),
   MEDICATION_GRACE_MINUTES: z.coerce.number().int().min(10).max(1440).default(120),
+  // How long to keep expired/revoked sessions and audit rows before the daily
+  // hygiene job removes them. The grace period preserves replay evidence.
+  SESSION_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
+  AUDIT_RETENTION_DAYS: z.coerce.number().int().min(30).default(365),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   LOG_PRETTY: booleanish.default(false),

@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import { childLogger } from "../lib/logger.js";
 import { runCheckInWatchdogJob } from "./checkInWatchdog.job.js";
 import { runMedicationReminderJob } from "./medicationReminder.job.js";
+import { runSessionHygieneJob } from "./sessionHygiene.job.js";
 
 const log = childLogger("scheduler");
 
@@ -15,7 +16,7 @@ const log = childLogger("scheduler");
  */
 const running = new Set<string>();
 
-function guarded(name: string, task: () => Promise<void>): void {
+function guarded(name: string, task: () => Promise<unknown>): void {
   if (running.has(name)) {
     log.warn({ job: name }, "skipping job — previous run is still in progress");
     return;
@@ -49,6 +50,13 @@ export function startJobs(): void {
   cron.schedule(
     "*/15 * * * *",
     () => guarded("check-in-watchdog", runCheckInWatchdogJob),
+    { timezone: "UTC" },
+  );
+
+  // Daily, off-peak and deliberately not on the hour.
+  cron.schedule(
+    "17 3 * * *",
+    () => guarded("session-hygiene", runSessionHygieneJob),
     { timezone: "UTC" },
   );
 
