@@ -1,4 +1,4 @@
-import type { Request, RequestHandler, Response } from "express";
+import type { Request, Response } from "express";
 import { env } from "../config/env.js";
 import { generateOpaqueToken, safeEqual } from "../lib/crypto.js";
 import { ForbiddenError } from "../lib/errors.js";
@@ -55,8 +55,3 @@ export function assertCsrf(req: Request): void {
     );
   }
 }
-
-export const requireCsrf: RequestHandler = (req, _res, next) => {
-  assertCsrf(req);
-  next();
-};
