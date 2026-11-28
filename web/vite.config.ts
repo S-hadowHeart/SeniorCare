@@ -39,10 +39,10 @@ export default defineConfig({
       // these floors prevent those gains from being diluted by new untested
       // code while the remaining pages gain coverage.
       thresholds: {
-        statements: 21.6,
-        branches: 13.7,
-        functions: 17.9,
-        lines: 22.5,
+        statements: 24.6,
+        branches: 15.7,
+        functions: 19.5,
+        lines: 25.7,
       },
     },
   },
